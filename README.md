@@ -93,6 +93,51 @@ docker compose up -d --build
 падает по памяти, соберите его локально (`make build`) и скопируйте `frontend/dist`
 на сервер — контейнер `frontend` тогда не нужен.
 
+### Если на сервере уже есть сайт на 80/443
+
+Тогда Caddy из комплекта поднимать не нужно — он не сможет занять порты. Приложение умеет
+отдавать и API, и статику Mini App само, поэтому внешнему прокси достаточно одного
+`proxy_pass`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.behind-proxy.yml up -d --build app
+```
+
+Приложение слушает `127.0.0.1:8000` (порт меняется переменной `APP_PORT`), снаружи оно
+недоступно — только через ваш прокси. Дальше добавьте виртуальный хост.
+
+nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name finance.example.com;
+
+    # сертификат выпускается вашим обычным способом: certbot --nginx -d finance.example.com
+    ssl_certificate     /etc/letsencrypt/live/finance.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/finance.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Если внешний веб-сервер — Caddy, весь конфиг сводится к трём строкам:
+
+```caddyfile
+finance.example.com {
+	reverse_proxy 127.0.0.1:8000
+}
+```
+
+Делить пути между API и статикой не нужно: `/api/*` и `/tg/*` обрабатывает FastAPI,
+всё остальное отдаётся как файлы Mini App из `frontend/dist`.
+
 ### Бэкап
 
 Всё состояние — в каталоге `data/`. Достаточно копировать его целиком:

@@ -27,6 +27,10 @@ DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 async def lifespan(app: FastAPI):
     configure_logging()
     log.info("старт FinanceTgApp %s, режим бота: %s", __version__, settings.bot_mode)
+    # Статика монтируется на импорте (важен порядок роутов), а сообщить об этом можно
+    # только здесь: до configure_logging у логгера ещё нет обработчиков
+    if STATIC_DIR.is_dir():
+        log.info("статика Mini App отдаётся приложением из %s", STATIC_DIR)
 
     async with get_session_factory()() as session:
         await bootstrap.ensure_reference_data(session)
@@ -102,8 +106,9 @@ async def telegram_webhook(
     return {"ok": True}
 
 
-# Если рядом лежит собранный фронт — отдаём его сами. В docker-compose это делает Caddy,
-# но такой вариант позволяет поднять всё одним контейнером без реверс-прокси.
-_frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-if _frontend_dist.is_dir():
-    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="frontend")
+# Отдача собранного фронта самим приложением. По умолчанию этим занимается Caddy из
+# docker-compose, но если сервер уже занят чужим веб-сервером, статику проще раздавать
+# отсюда: тогда наружу торчит один порт, и внешнему прокси достаточно одного location.
+STATIC_DIR = settings.static_dir or Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if STATIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")

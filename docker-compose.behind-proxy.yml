@@ -1,0 +1,19 @@
+# Режим для сервера, где 80 и 443 уже заняты другим веб-сервером.
+#
+# Caddy из основного файла не запускается, приложение слушает только localhost,
+# статику Mini App отдаёт само. Внешнему nginx/Caddy остаётся один proxy_pass.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.behind-proxy.yml up -d --build app
+#
+# Порт можно переопределить переменной APP_PORT в .env.
+
+services:
+  app:
+    ports:
+      # Только петлевой интерфейс: снаружи приложение доступно исключительно через прокси
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    environment:
+      STATIC_DIR: /srv/www
+    volumes:
+      - ./data:/data
+      - ./frontend/dist:/srv/www:ro

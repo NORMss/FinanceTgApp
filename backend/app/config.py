@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     dev_auth_bypass: bool = False
     dev_telegram_id: int = 0
 
+    # Каталог со сборкой Mini App. Если задан, приложение отдаёт статику само —
+    # это нужно, когда снаружи уже стоит чужой nginx/Caddy и свой поднимать некуда.
+    static_dir: Path | None = None
+
     # --- База ---
     database_url: str = "sqlite+aiosqlite:///./data/app.db"
 
