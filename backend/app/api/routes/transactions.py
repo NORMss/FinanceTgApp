@@ -1,0 +1,142 @@
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.api.deps import CurrentUser, SessionDep
+from app.api.periods import period_bounds
+from app.api.schemas import (
+    TransactionCreate,
+    TransactionOut,
+    TransactionPage,
+    TransactionUpdate,
+)
+from app.models import TransactionType
+from app.repositories import accounts as accounts_repo
+from app.repositories import transactions as tx_repo
+from app.repositories.transactions import TxFilter
+from app.services import ledger
+from app.util.money import to_minor
+
+router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+PeriodDep = Annotated[tuple[datetime, datetime], Depends(period_bounds)]
+
+
+@router.get("", response_model=TransactionPage)
+async def list_transactions(
+    session: SessionDep,
+    _: CurrentUser,
+    bounds: PeriodDep,
+    types: Annotated[list[TransactionType] | None, Query()] = None,
+    category_ids: Annotated[list[str] | None, Query()] = None,
+    account_ids: Annotated[list[str] | None, Query()] = None,
+    author_ids: Annotated[list[str] | None, Query()] = None,
+    search: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> TransactionPage:
+    start, end = bounds
+    flt = TxFilter(
+        start=start,
+        end=end,
+        types=types or [],
+        category_ids=category_ids or [],
+        account_ids=account_ids or [],
+        author_ids=author_ids or [],
+        search=search,
+    )
+    items = await tx_repo.list_page(session, flt, limit=limit, offset=offset)
+    return TransactionPage(
+        items=[TransactionOut.model_validate(item) for item in items],
+        total=await tx_repo.count(session, flt),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("", response_model=TransactionOut, status_code=201)
+async def create_transaction(
+    payload: TransactionCreate, session: SessionDep, user: CurrentUser
+) -> TransactionOut:
+    account_id = payload.account_id
+    if not account_id:
+        # По умолчанию пишем в общий счёт: это самый частый случай в семейном учёте
+        shared = await accounts_repo.get_shared(session)
+        if shared is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "не указан счёт")
+        account_id = shared.id
+
+    account = await accounts_repo.get(session, account_id)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "счёт не найден")
+
+    try:
+        amount_minor = to_minor(payload.amount, account.currency)
+        splits = None
+        if payload.splits is not None:
+            splits = {
+                user_id: to_minor(share, account.currency)
+                for user_id, share in payload.splits.items()
+            }
+        elif payload.split_mode == "none":
+            splits = {}
+
+        tx = await ledger.create_transaction(
+            session,
+            author=user,
+            tx_type=payload.type,
+            amount_minor=amount_minor,
+            account_id=account_id,
+            counter_account_id=payload.counter_account_id,
+            category_id=payload.category_id,
+            occurred_at=payload.occurred_at,
+            note=payload.note,
+            tags=payload.tags,
+            splits=splits,
+        )
+    except (ledger.LedgerError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    return TransactionOut.model_validate(tx)
+
+
+@router.get("/{tx_id}", response_model=TransactionOut)
+async def get_transaction(tx_id: str, session: SessionDep, _: CurrentUser) -> TransactionOut:
+    tx = await tx_repo.get(session, tx_id)
+    if tx is None or tx.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "операция не найдена")
+    return TransactionOut.model_validate(tx)
+
+
+@router.patch("/{tx_id}", response_model=TransactionOut)
+async def update_transaction(
+    tx_id: str, payload: TransactionUpdate, session: SessionDep, _: CurrentUser
+) -> TransactionOut:
+    tx = await tx_repo.get(session, tx_id)
+    if tx is None or tx.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "операция не найдена")
+
+    try:
+        updated = await ledger.update_transaction(
+            session,
+            tx,
+            amount_minor=to_minor(payload.amount, tx.currency) if payload.amount else None,
+            occurred_at=payload.occurred_at,
+            category_id=payload.category_id,
+            account_id=payload.account_id,
+            note=payload.note,
+            tags=payload.tags,
+        )
+    except (ledger.LedgerError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    return TransactionOut.model_validate(updated)
+
+
+@router.delete("/{tx_id}", status_code=204)
+async def delete_transaction(tx_id: str, session: SessionDep, _: CurrentUser) -> None:
+    tx = await tx_repo.get(session, tx_id)
+    if tx is None or tx.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "операция не найдена")
+    await ledger.delete_transaction(session, tx)

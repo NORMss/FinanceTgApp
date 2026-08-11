@@ -1,0 +1,76 @@
+from functools import cached_property, lru_cache
+from pathlib import Path
+from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Конфигурация приложения. Читается из переменных окружения и .env в корне репозитория."""
+
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # --- Telegram ---
+    bot_token: str = ""
+    public_url: str = "http://localhost:5173"
+    # Строкой, а не list[int]: pydantic-settings пытается разобрать сложные типы как JSON,
+    # и «111,222» из .env до валидатора просто не доезжает
+    allowed_telegram_ids: str = ""
+    bot_mode: Literal["webhook", "polling", "off"] = "polling"
+    webhook_secret: str = ""
+    webhook_path: str = "/tg/webhook"
+
+    # --- Приложение ---
+    jwt_secret: str = "dev-secret-change-me"
+    jwt_ttl_seconds: int = 60 * 60 * 24 * 7
+    # Максимальный возраст initData, после которого требуем свежий запуск Mini App
+    init_data_max_age_seconds: int = 60 * 60 * 24
+    base_currency: str = "RUB"
+    log_level: str = "INFO"
+    dev_auth_bypass: bool = False
+    dev_telegram_id: int = 0
+
+    # --- База ---
+    database_url: str = "sqlite+aiosqlite:///./data/app.db"
+
+    # --- Google Sheets ---
+    sheets_enabled: bool = False
+    google_credentials_file: Path = Path("./data/google-credentials.json")
+    google_spreadsheet_id: str = ""
+    sheets_sync_interval: int = 60
+
+    @cached_property
+    def allowed_ids(self) -> frozenset[int]:
+        parts = (part.strip() for part in self.allowed_telegram_ids.split(","))
+        return frozenset(int(part) for part in parts if part.lstrip("-").isdigit())
+
+    @property
+    def webhook_url(self) -> str:
+        return f"{self.public_url.rstrip('/')}{self.webhook_path}"
+
+    @property
+    def sheets_ready(self) -> bool:
+        return bool(
+            self.sheets_enabled
+            and self.google_spreadsheet_id
+            and self.google_credentials_file.exists()
+        )
+
+    def is_allowed(self, telegram_id: int) -> bool:
+        """Приложение приватное: пускаем только явно перечисленных пользователей.
+
+        Пустой список означает «никого» — это защита от случайного деплоя нараспашку.
+        """
+        return telegram_id in self.allowed_ids
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

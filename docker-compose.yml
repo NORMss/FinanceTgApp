@@ -1,0 +1,58 @@
+services:
+  app:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////data/app.db
+      GOOGLE_CREDENTIALS_FILE: /data/google-credentials.json
+    volumes:
+      - ./data:/data
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # Разовая сборка фронта: docker compose --profile build run --rm frontend
+  # Результат ложится в ./frontend/dist, откуда его отдаёт Caddy.
+  frontend:
+    image: node:22-alpine
+    profiles: ["build"]
+    working_dir: /src
+    volumes:
+      - ./frontend:/src
+    command: sh -c "npm ci --no-audit --no-fund && npm run build"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      # Домен для автоматического TLS. Для локальной проверки: DOMAIN=:80
+      DOMAIN: ${DOMAIN:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./frontend/dist:/srv/www:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  caddy_data:
+  caddy_config:
