@@ -100,8 +100,19 @@ docker compose up -d --build
 `proxy_pass`:
 
 ```bash
+make up-proxy
+```
+
+или то же самое вручную:
+
+```bash
+docker compose --profile build run --rm frontend
 docker compose -f docker-compose.yml -f docker-compose.behind-proxy.yml up -d --build app
 ```
+
+Имя сервиса `app` в конце обязательно. Без него Compose поднимет **все** сервисы, включая
+Caddy, и вы снова получите `Bind for 0.0.0.0:80 failed: port is already allocated`.
+По той же причине в этом режиме нельзя запускать `make up`.
 
 Приложение слушает `127.0.0.1:8000` (порт меняется переменной `APP_PORT`), снаружи оно
 недоступно — только через ваш прокси. Дальше добавьте виртуальный хост.
