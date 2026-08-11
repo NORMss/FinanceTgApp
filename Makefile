@@ -31,7 +31,12 @@ lint: ## Проверить стиль бэкенда
 build: ## Собрать фронт в frontend/dist
 	cd frontend && npm run build
 
+data: ## Подготовить каталог данных под пользователя контейнера (нужен sudo)
+	mkdir -p data
+	sudo chown -R 10001:10001 data
+
 up: ## Поднять всё в docker (прод)
+	mkdir -p data
 	docker compose --profile build run --rm frontend
 	docker compose up -d --build
 
@@ -41,4 +46,4 @@ down: ## Остановить docker
 logs: ## Логи приложения
 	docker compose logs -f app
 
-.PHONY: help setup migrate revision api web test lint build up down logs
+.PHONY: help setup migrate revision api web test lint build data up down logs

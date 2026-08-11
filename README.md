@@ -49,20 +49,59 @@ cloudflared tunnel --url http://localhost:5173
 
 ## Развёртывание на VPS
 
+Нужен Docker с плагином Compose. На чистой Ubuntu:
+
 ```bash
-git clone <репозиторий> && cd FinanceTgApp
-cp .env.example .env     # BOT_TOKEN, ALLOWED_TELEGRAM_IDS, PUBLIC_URL, DOMAIN, BOT_MODE=webhook, секреты
-make up
+curl -fsSL https://get.docker.com | sh
+```
+
+Дальше:
+
+```bash
+git clone https://github.com/NORMss/FinanceTgApp.git && cd FinanceTgApp
+cp .env.example .env && nano .env      # BOT_TOKEN, ALLOWED_TELEGRAM_IDS, PUBLIC_URL, DOMAIN, BOT_MODE=webhook, секреты
+
+# Каталог данных: БД и ключ Google. Владелец — uid 10001, под которым работает контейнер
+mkdir -p data && sudo chown -R 10001:10001 data
+
+docker compose --profile build run --rm frontend   # сборка Mini App в frontend/dist
+docker compose up -d --build                       # приложение + Caddy
+docker compose logs -f app
+```
+
+То же самое одной командой — `make up`, если на сервере есть `make`.
+
+Порты 80 и 443 должны быть открыты: без них Caddy не пройдёт ACME-проверку и не получит
+сертификат. Миграции накатываются на старте контейнера, вебхук регистрируется сам.
+
+Последний шаг — в @BotFather: `/newapp` (или **Bot Settings → Menu Button**) и указать
+`PUBLIC_URL` как адрес Mini App.
+
+Обновление:
+
+```bash
+git pull
+docker compose --profile build run --rm frontend
+docker compose up -d --build
 ```
 
 `PUBLIC_URL` и `DOMAIN` задают одно и то же имя хоста в двух видах: первый нужен приложению
 (вебхук, кнопка Mini App), второй — Caddy для выпуска сертификата. `.env` должен лежать
 в корне репозитория рядом с `docker-compose.yml`: именно оттуда Compose берёт `${DOMAIN}`.
 
-`make up` собирает фронт, поднимает приложение и Caddy, накатывает миграции и регистрирует
-вебхук. Caddy сам получит сертификат Let's Encrypt для указанного домена.
+Минимальные требования: 1 vCPU, 1 ГБ RAM, 10 ГБ диска. Если на 1 ГБ сборка фронта
+падает по памяти, соберите его локально (`make build`) и скопируйте `frontend/dist`
+на сервер — контейнер `frontend` тогда не нужен.
 
-Минимальные требования: 1 vCPU, 1 ГБ RAM, 10 ГБ диска.
+### Бэкап
+
+Всё состояние — в каталоге `data/`. Достаточно копировать его целиком:
+
+```bash
+docker compose stop app && tar czf backup-$(date +%F).tar.gz data && docker compose start app
+```
+
+Дублирующая копия журнала лежит в Google Sheets, если синхронизация включена.
 
 ## Настройка Google Sheets
 
