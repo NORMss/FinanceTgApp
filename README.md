@@ -51,10 +51,13 @@ cloudflared tunnel --url http://localhost:5173
 
 ```bash
 git clone <репозиторий> && cd FinanceTgApp
-cp .env.example .env     # BOT_TOKEN, ALLOWED_TELEGRAM_IDS, PUBLIC_URL, BOT_MODE=webhook, секреты
-echo "DOMAIN=finance.example.com" >> .env
+cp .env.example .env     # BOT_TOKEN, ALLOWED_TELEGRAM_IDS, PUBLIC_URL, DOMAIN, BOT_MODE=webhook, секреты
 make up
 ```
+
+`PUBLIC_URL` и `DOMAIN` задают одно и то же имя хоста в двух видах: первый нужен приложению
+(вебхук, кнопка Mini App), второй — Caddy для выпуска сертификата. `.env` должен лежать
+в корне репозитория рядом с `docker-compose.yml`: именно оттуда Compose берёт `${DOMAIN}`.
 
 `make up` собирает фронт, поднимает приложение и Caddy, накатывает миграции и регистрирует
 вебхук. Caddy сам получит сертификат Let's Encrypt для указанного домена.
