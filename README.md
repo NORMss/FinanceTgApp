@@ -149,6 +149,42 @@ finance.example.com {
 Делить пути между API и статикой не нужно: `/api/*` и `/tg/*` обрабатывает FastAPI,
 всё остальное отдаётся как файлы Mini App из `frontend/dist`.
 
+### Если внешний прокси сам работает в контейнере
+
+Тогда `127.0.0.1` не подойдёт: для контейнера прокси это его собственный loopback, а не хост.
+Вместо проброса портов подключаем приложение к сети прокси и ходим по DNS-имени.
+
+Найдите сеть чужого проекта и пропишите её в `.env`:
+
+```bash
+docker network ls
+```
+
+```bash
+PROXY_NETWORK=имя_сети_прокси
+```
+
+Запуск (порты наружу не публикуются вообще):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.shared-net.yml up -d --build app
+```
+
+В сети прокси приложение доступно под именем `finance-app`. Site-блок для Caddy — сертификат
+он выпустит сам, как для остальных своих доменов:
+
+```caddyfile
+finance.example.com {
+	reverse_proxy finance-app:8000
+}
+```
+
+После правки конфига прокси его надо перезагрузить:
+
+```bash
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
 ### Бэкап
 
 Всё состояние — в каталоге `data/`. Достаточно копировать его целиком:

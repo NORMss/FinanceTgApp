@@ -45,10 +45,15 @@ up-proxy: ## Поднять только приложение на 127.0.0.1 —
 	docker compose --profile build run --rm frontend
 	docker compose -f docker-compose.yml -f docker-compose.behind-proxy.yml up -d --build app
 
+up-shared: ## Поднять приложение в сети чужого прокси-контейнера (нужен PROXY_NETWORK в .env)
+	mkdir -p data
+	docker compose --profile build run --rm frontend
+	docker compose -f docker-compose.yml -f docker-compose.shared-net.yml up -d --build app
+
 down: ## Остановить docker
 	docker compose down
 
 logs: ## Логи приложения
 	docker compose logs -f app
 
-.PHONY: help setup migrate revision api web test lint build data up up-proxy down logs
+.PHONY: help setup migrate revision api web test lint build data up up-proxy up-shared down logs

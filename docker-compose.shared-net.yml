@@ -1,0 +1,35 @@
+# Режим для сервера, где 80 и 443 держит ЧУЖОЙ CADDY (или nginx) В КОНТЕЙНЕРЕ.
+#
+# Свой Caddy не запускается, порты наружу не публикуются вообще: приложение видно
+# только соседним контейнерам в общей сети под именем finance-app.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.shared-net.yml up -d --build app
+#
+# Имя внешней сети задаётся переменной PROXY_NETWORK в .env. Посмотреть существующие:
+#   docker network ls
+#
+# В конфиг внешнего Caddy добавляется site-блок — сертификат он выпустит сам:
+#   finance.example.com {
+#       reverse_proxy finance-app:8000
+#   }
+#
+# Обращение по 127.0.0.1 из контейнера прокси не сработает: для него это его собственный
+# loopback, а не хост. Поэтому именно общая сеть и DNS-имя, а не проброшенный порт.
+
+services:
+  app:
+    environment:
+      STATIC_DIR: /srv/www
+    volumes:
+      - ./data:/data
+      - ./frontend/dist:/srv/www:ro
+    networks:
+      default: {}
+      proxy:
+        aliases:
+          - finance-app
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-web}
