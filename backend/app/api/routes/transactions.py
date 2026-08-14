@@ -15,6 +15,7 @@ from app.models import TransactionType
 from app.repositories import accounts as accounts_repo
 from app.repositories import transactions as tx_repo
 from app.repositories.transactions import TxFilter
+from app.services import catalog as catalog_service
 from app.services import ledger
 from app.util.money import to_minor
 
@@ -41,7 +42,8 @@ async def list_transactions(
         start=start,
         end=end,
         types=types or [],
-        category_ids=category_ids or [],
+        # Выбранная категория тянет за собой подкатегории: «Продукты» — это и «Пятёрочка»
+        category_ids=await catalog_service.expand_ids(session, category_ids or []),
         account_ids=account_ids or [],
         author_ids=author_ids or [],
         search=search,
@@ -117,16 +119,35 @@ async def update_transaction(
     if tx is None or tx.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "операция не найдена")
 
+    sent = payload.model_fields_set
+    currency = tx.currency
+
     try:
+        splits: dict[str, int] | None | ledger.UnsetType = ledger.UNSET
+        if payload.splits is not None:
+            splits = {
+                user_id: to_minor(share, currency) for user_id, share in payload.splits.items()
+            }
+        elif payload.split_mode == "none":
+            splits = {}
+        elif payload.split_mode == "auto":
+            splits = None  # пересчитать по умолчанию
+
         updated = await ledger.update_transaction(
             session,
             tx,
-            amount_minor=to_minor(payload.amount, tx.currency) if payload.amount else None,
+            amount_minor=to_minor(payload.amount, currency) if payload.amount else None,
             occurred_at=payload.occurred_at,
-            category_id=payload.category_id,
+            tx_type=payload.type,
+            # Ключ прислали — применяем, даже если значение null: это «убрать категорию»
+            category_id=payload.category_id if "category_id" in sent else ledger.UNSET,
             account_id=payload.account_id,
+            counter_account_id=(
+                payload.counter_account_id if "counter_account_id" in sent else ledger.UNSET
+            ),
             note=payload.note,
             tags=payload.tags,
+            splits=splits,
         )
     except (ledger.LedgerError, ValueError) as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc

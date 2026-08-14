@@ -23,8 +23,13 @@
 
 	header {
 		X-Content-Type-Options nosniff
-		Referrer-Policy strict-origin-when-cross-origin
-		# Mini App открывается внутри Telegram — фрейм должен быть разрешён
+		Referrer-Policy no-referrer
+		# Приватное приложение: в поисковой выдаче ему не место
+		X-Robots-Tag "noindex, nofollow, noarchive"
+		# Открывать во фрейме разрешаем только Telegram — это и есть Mini App
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors https://web.telegram.org https://telegram.org; base-uri 'none'; form-action 'none'; object-src 'none'"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Ни версии сервера, ни признаков того, что внутри
 		-Server
 	}
 }

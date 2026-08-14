@@ -63,9 +63,20 @@ export interface CategoryTotal {
   category_id: string | null
   name: string
   icon: string
+  /** Вместе с подкатегориями. own_minor — то, что записано прямо на эту категорию. */
   amount_minor: number
   count: number
   share: number
+  parent_id: string | null
+  own_minor: number
+}
+
+/** Фильтры истории и отчёта. Пустые поля в запрос не уходят. */
+export interface Filters {
+  authorId?: string | null
+  categoryId?: string | null
+  type?: TransactionType | null
+  search?: string
 }
 
 export interface Summary {

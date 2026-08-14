@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 from aiogram.types import Update
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
@@ -76,19 +78,96 @@ app = FastAPI(
     title="FinanceTgApp",
     version=__version__,
     lifespan=lifespan,
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
+    # Схема API — это карта всех ручек. Приватному приложению на двоих она не нужна,
+    # а нашедшему адрес экономит всю разведку. Открывается через ENABLE_DOCS=true.
+    docs_url="/api/docs" if settings.enable_docs else None,
+    redoc_url=None,
+    openapi_url="/api/openapi.json" if settings.enable_docs else None,
 )
+
+# Origin'ы Vite нужны только при локальной разработке. В продакшене их быть не должно:
+# лишний разрешённый origin — это лишний способ дёргать API из чужой вкладки
+ALLOWED_ORIGINS = [settings.public_url]
+if settings.dev_auth_bypass:
+    ALLOWED_ORIGINS += DEV_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.public_url, *DEV_ORIGINS],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Заголовки, которые запрещают лишнее и убирают приметы сервера.
+
+    Mini App открывается внутри Telegram, поэтому frame-ancestors разрешает только его
+    домены: в чужой iframe страницу не вставить, кликджекинг отпадает. Заголовок `Server`
+    с версией uvicorn снимается не здесь, а флагом `--no-server-header`: его дописывает
+    сам сервер уже после ASGI-приложения, и из middleware до него не дотянуться.
+    """
+    response = await call_next(request)
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
+
+
+SECURITY_HEADERS = {
+    "Content-Security-Policy": "; ".join(
+        (
+            "default-src 'self'",
+            # Telegram отдаёт telegram-web-app.js со своего домена и подставляет
+            # инлайновые стили в разметку, поэтому unsafe-inline только для стилей
+            "script-src 'self' https://telegram.org",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data:",
+            "connect-src 'self'",
+            "frame-ancestors https://web.telegram.org https://telegram.org",
+            "base-uri 'none'",
+            "form-action 'none'",
+            "object-src 'none'",
+        )
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
+    # Приложение приватное: в поиске ему делать нечего
+    "X-Robots-Tag": "noindex, nofollow, noarchive",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+    """Ни трассировки, ни текста исключения наружу — только в лог."""
+    log.exception("необработанная ошибка на %s %s", request.method, request.url.path)
+    return JSONResponse({"detail": "Внутренняя ошибка"}, status_code=500)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots() -> PlainTextResponse:
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
+
+
 app.include_router(api_router)
+
+
+@app.api_route(
+    "/api/{path:path}",
+    methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+    include_in_schema=False,
+)
+async def unknown_api(path: str) -> JSONResponse:
+    """Заглушка для несуществующих ручек API.
+
+    Без неё запрос к /api/чего-нибудь проваливался бы в раздачу статики и отвечал
+    по-разному в зависимости от того, есть ли такой файл. Одинаковый ответ на всё
+    неизвестное не даёт перебором нащупать, что в API есть, а чего нет.
+    """
+    return JSONResponse({"detail": "Не найдено"}, status_code=404)
 
 
 @app.post(settings.webhook_path, include_in_schema=False)
@@ -101,8 +180,12 @@ async def telegram_webhook(
     Секретный заголовок обязателен: без него любой, кто узнает адрес, сможет
     присылать боту поддельные апдейты.
     """
-    if settings.webhook_secret and x_telegram_bot_api_secret_token != settings.webhook_secret:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "неверный секрет вебхука")
+    if settings.webhook_secret and not hmac.compare_digest(
+        x_telegram_bot_api_secret_token or "", settings.webhook_secret
+    ):
+        # Сравнение постоянного времени: обычное «!=» выходит на первом несовпавшем
+        # байте и по времени ответа выдаёт, насколько угадан префикс секрета
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Не найдено")
 
     dispatcher = getattr(request.app.state, "dispatcher", None)
     bot = getattr(request.app.state, "bot", None)

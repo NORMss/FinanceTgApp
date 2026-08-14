@@ -1,24 +1,25 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 
-from app import __version__
-from app.config import settings
 from app.db import healthcheck
 
 router = APIRouter(tags=["service"])
 
 
-@router.get("/health")
-async def health() -> dict:
-    """Проверка живости для docker healthcheck и мониторинга."""
+@router.api_route("/health", methods=["GET", "HEAD"])
+async def health(response: Response) -> dict:
+    """Проверка живости для docker healthcheck и мониторинга.
+
+    Отвечает одним словом. Раньше здесь были версия приложения, режим бота и состояние
+    Google Sheets — удобно при отладке, но это же и готовая карточка сервиса для любого,
+    кто нашёл адрес: по версии подбирают известные дыры. Всё то же самое пишется в лог
+    при старте, где оно доступно владельцу и никому больше.
+    """
     try:
         db_ok = await healthcheck()
     except Exception:  # noqa: BLE001 — наружу отдаём статус, а не трейс
         db_ok = False
 
-    return {
-        "status": "ok" if db_ok else "degraded",
-        "version": __version__,
-        "db": db_ok,
-        "bot_mode": settings.bot_mode,
-        "sheets": settings.sheets_ready,
-    }
+    if not db_ok:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "degraded"}
+    return {"status": "ok"}

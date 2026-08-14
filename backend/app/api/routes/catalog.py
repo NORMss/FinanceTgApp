@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, SessionDep
 from app.api.schemas import (
     AccountCreate,
     AccountOut,
     CategoryCreate,
+    CategoryDeleteOut,
     CategoryOut,
+    CategoryUpdate,
     UserOut,
 )
 from app.models import CategoryKind
@@ -13,6 +15,7 @@ from app.repositories import accounts as accounts_repo
 from app.repositories import categories as categories_repo
 from app.repositories import transactions as tx_repo
 from app.repositories import users as users_repo
+from app.services import catalog as catalog_service
 from app.util.money import to_minor
 
 router = APIRouter(tags=["catalog"])
@@ -66,15 +69,55 @@ async def list_categories(
 async def create_category(
     payload: CategoryCreate, session: SessionDep, _: CurrentUser
 ) -> CategoryOut:
-    category = await categories_repo.create(
-        session,
-        name=payload.name,
-        kind=payload.kind,
-        icon=payload.icon,
-        parent_id=payload.parent_id,
-        sort=payload.sort,
-    )
+    try:
+        category = await catalog_service.create_category(
+            session,
+            name=payload.name,
+            kind=payload.kind,
+            icon=payload.icon,
+            parent_id=payload.parent_id,
+            sort=payload.sort,
+        )
+    except catalog_service.CatalogError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     return CategoryOut.model_validate(category)
+
+
+@router.patch("/categories/{category_id}", response_model=CategoryOut)
+async def update_category(
+    category_id: str, payload: CategoryUpdate, session: SessionDep, _: CurrentUser
+) -> CategoryOut:
+    category = await categories_repo.get(session, category_id)
+    if category is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "категория не найдена")
+
+    try:
+        updated = await catalog_service.update_category(
+            session,
+            category,
+            name=payload.name,
+            icon=payload.icon,
+            parent_id=payload.parent_id,
+            # Явный null в теле запроса — «поднять на верхний уровень»
+            move_to_root="parent_id" in payload.model_fields_set and payload.parent_id is None,
+            sort=payload.sort,
+            archived=payload.archived,
+        )
+    except catalog_service.CatalogError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return CategoryOut.model_validate(updated)
+
+
+@router.delete("/categories/{category_id}", response_model=CategoryDeleteOut)
+async def delete_category(
+    category_id: str, session: SessionDep, _: CurrentUser
+) -> CategoryDeleteOut:
+    """Удаляет категорию или прячет её, если на неё ссылаются операции."""
+    category = await categories_repo.get(session, category_id)
+    if category is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "категория не найдена")
+    result = await catalog_service.delete_category(session, category)
+    return CategoryDeleteOut(result=result)
 
 
 @router.get("/categories/recent", response_model=list[str])

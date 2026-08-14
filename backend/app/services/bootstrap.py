@@ -25,6 +25,26 @@ DEFAULT_EXPENSE_CATEGORIES: list[tuple[str, str]] = [
     ("Прочее", "📦"),
 ]
 
+# Подкатегории для тех корней, где разбивка нужна почти всем. Остальное пользователь
+# добавит сам — заранее насыпать десятки магазинов смысла нет.
+DEFAULT_SUBCATEGORIES: dict[str, list[tuple[str, str]]] = {
+    "Продукты": [
+        ("Пятёрочка", "🟢"),
+        ("Магнит", "🔴"),
+        ("ВкусВилл", "🥦"),
+        ("Рынок", "🥕"),
+    ],
+    "Транспорт": [
+        ("Такси", "🚕"),
+        ("Общественный", "🚇"),
+        ("Бензин", "⛽"),
+    ],
+    "Кафе и рестораны": [
+        ("Кофе", "☕"),
+        ("Доставка", "🛵"),
+    ],
+}
+
 DEFAULT_INCOME_CATEGORIES: list[tuple[str, str]] = [
     ("Зарплата", "💼"),
     ("Подработка", "🧰"),
@@ -35,24 +55,28 @@ DEFAULT_INCOME_CATEGORIES: list[tuple[str, str]] = [
 
 # Правила автокатегоризации: подстрока в тексте -> название категории.
 # Покрывают типовой быстрый ввод из чата и дописываются руками по мере надобности.
+# Где есть подкатегория, целимся в неё: «500 пятёрочка» из чата должно попасть
+# в «Продукты · Пятёрочка», иначе разбивку пришлось бы проставлять руками.
 DEFAULT_RULES: list[tuple[str, str]] = [
-    ("пятёроч", "Продукты"),
-    ("пятероч", "Продукты"),
-    ("магнит", "Продукты"),
+    ("пятёроч", "Пятёрочка"),
+    ("пятероч", "Пятёрочка"),
+    ("магнит", "Магнит"),
     ("перекрёст", "Продукты"),
     ("перекрест", "Продукты"),
     ("лента", "Продукты"),
     ("ашан", "Продукты"),
-    ("вкусвилл", "Продукты"),
+    ("вкусвилл", "ВкусВилл"),
+    ("рынок", "Рынок"),
     ("продукт", "Продукты"),
-    ("кофе", "Кафе и рестораны"),
+    ("кофе", "Кофе"),
     ("кафе", "Кафе и рестораны"),
     ("ресторан", "Кафе и рестораны"),
-    ("доставка", "Кафе и рестораны"),
-    ("такси", "Транспорт"),
-    ("метро", "Транспорт"),
-    ("бензин", "Транспорт"),
-    ("заправка", "Транспорт"),
+    ("доставка", "Доставка"),
+    ("такси", "Такси"),
+    ("метро", "Общественный"),
+    ("автобус", "Общественный"),
+    ("бензин", "Бензин"),
+    ("заправка", "Бензин"),
     ("аренда", "Жильё и коммуналка"),
     ("квартплата", "Жильё и коммуналка"),
     ("жкх", "Жильё и коммуналка"),
@@ -75,10 +99,24 @@ async def _is_empty(session: AsyncSession, model: type) -> bool:
 async def ensure_reference_data(session: AsyncSession) -> None:
     """Создаёт категории, правила и общий счёт, если база ещё пустая."""
     if await _is_empty(session, Category):
+        roots: dict[str, Category] = {}
         for index, (name, icon) in enumerate(DEFAULT_EXPENSE_CATEGORIES):
-            await categories_repo.create(
+            roots[name] = await categories_repo.create(
                 session, name=name, kind=CategoryKind.EXPENSE, icon=icon, sort=index * 10
             )
+        for parent_name, children in DEFAULT_SUBCATEGORIES.items():
+            parent = roots.get(parent_name)
+            if parent is None:
+                continue
+            for index, (name, icon) in enumerate(children):
+                await categories_repo.create(
+                    session,
+                    name=name,
+                    kind=CategoryKind.EXPENSE,
+                    icon=icon,
+                    parent_id=parent.id,
+                    sort=index * 10,
+                )
         for index, (name, icon) in enumerate(DEFAULT_INCOME_CATEGORIES):
             await categories_repo.create(
                 session, name=name, kind=CategoryKind.INCOME, icon=icon, sort=index * 10

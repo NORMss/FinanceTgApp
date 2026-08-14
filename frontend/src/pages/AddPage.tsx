@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 import { api } from '../api'
+import CategoryPicker from '../components/CategoryPicker'
 import { formatMoney, isValidAmount, normalizeAmountInput } from '../format'
 import { haptic, notify } from '../telegram'
-import type { Category, TransactionType } from '../types'
+import type { TransactionType } from '../types'
 
 interface Props {
   onDone: (message: string) => void
@@ -27,15 +28,6 @@ export default function AddPage({ onDone }: Props) {
   const categories = useQuery({ queryKey: ['categories', kind], queryFn: () => api.categories(kind) })
   const recent = useQuery({ queryKey: ['recent-categories'], queryFn: api.recentCategories })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
-
-  const ordered = useMemo(() => {
-    const all: Category[] = categories.data ?? []
-    if (kind === 'income' || !recent.data?.length) return all
-    const weight = new Map(recent.data.map((id, index) => [id, index]))
-    return [...all].sort(
-      (a, b) => (weight.get(a.id) ?? 999) - (weight.get(b.id) ?? 999),
-    )
-  }, [categories.data, recent.data, kind])
 
   const create = useMutation({
     mutationFn: () =>
@@ -101,22 +93,12 @@ export default function AddPage({ onDone }: Props) {
         <p className="section-title" style={{ margin: '0 0 10px' }}>
           Категория
         </p>
-        <div className="chips">
-          {ordered.map((category) => (
-            <button
-              key={category.id}
-              type="button"
-              className="chip"
-              data-active={categoryId === category.id}
-              onClick={() => {
-                haptic()
-                setCategoryId(categoryId === category.id ? null : category.id)
-              }}
-            >
-              {category.icon} {category.name}
-            </button>
-          ))}
-        </div>
+        <CategoryPicker
+          categories={categories.data ?? []}
+          value={categoryId}
+          onChange={setCategoryId}
+          order={kind === 'expense' ? recent.data : undefined}
+        />
       </div>
 
       <input

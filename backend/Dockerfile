@@ -23,4 +23,5 @@ USER appuser
 EXPOSE 8000
 
 # Миграции накатываются на старте — для однопроцессного приложения это безопасно
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log --workers 1"]
+# --no-server-header: не сообщаем сканерам, что внутри uvicorn и какой версии
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log --no-server-header --workers 1"]

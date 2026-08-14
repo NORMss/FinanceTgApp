@@ -75,9 +75,26 @@ class CategoryOut(ORMModel):
 class CategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     kind: CategoryKind = CategoryKind.EXPENSE
-    icon: str = ""
+    icon: str = Field(default="", max_length=32)
     parent_id: str | None = None
     sort: int = 100
+
+
+class CategoryUpdate(BaseModel):
+    """Все поля необязательны. Отдельно различаем «поле не прислали» и «прислали null»:
+    `parent_id: null` — это команда «вынести из родителя наверх», а отсутствие ключа
+    означает «родителя не трогать»."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    icon: str | None = Field(default=None, max_length=32)
+    parent_id: str | None = None
+    sort: int | None = None
+    archived: bool | None = None
+
+
+class CategoryDeleteOut(BaseModel):
+    # deleted — стёрли насовсем, archived — спрятали, потому что на неё ссылаются операции
+    result: Literal["deleted", "archived"]
 
 
 # --- операции ---
@@ -119,12 +136,22 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
+    """Правка операции. Меняется только то, что прислали.
+
+    Как и у категорий, `null` в присланном поле означает «очистить»: `category_id: null`
+    снимает категорию, а отсутствие ключа её сохраняет.
+    """
+
+    type: TransactionType | None = None
     amount: str | None = None
     account_id: str | None = None
+    counter_account_id: str | None = None
     category_id: str | None = None
     occurred_at: datetime | None = None
     note: str | None = None
     tags: str | None = None
+    split_mode: Literal["auto", "none"] | None = None
+    splits: dict[str, str] | None = None
 
 
 class TransactionPage(BaseModel):
@@ -141,9 +168,12 @@ class CategoryTotalOut(BaseModel):
     category_id: str | None
     name: str
     icon: str
+    # amount_minor у родителя включает подкатегории, own_minor — только его собственные траты
     amount_minor: int
     count: int
     share: float
+    parent_id: str | None = None
+    own_minor: int = 0
 
 
 class AuthorTotalOut(BaseModel):

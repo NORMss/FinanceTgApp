@@ -30,6 +30,22 @@ export function isValidAmount(raw: string): boolean {
   return /^\d+(\.\d{1,2})?$/.test(value) && Number(value) > 0
 }
 
+/** Копейки -> строка для поля ввода: «1234,56». Разряды не разделяем — их пришлось бы
+ * вычищать при каждом нажатии клавиши. */
+export function toAmountInput(minor: number): string {
+  const abs = Math.abs(minor)
+  const cents = abs % 100
+  const whole = Math.trunc(abs / 100)
+  return cents ? `${whole},${cents.toString().padStart(2, '0')}` : String(whole)
+}
+
+/** Строка ввода -> копейки. Нужна, чтобы сравнить введённое с уже сохранённым
+ * без плавающей точки: 0.1 + 0.2 в JavaScript даёт не то, что ожидается. */
+export function toMinor(raw: string): number {
+  const [whole, fraction = ''] = normalizeAmountInput(raw).split('.')
+  return Number(whole || 0) * 100 + Number(fraction.padEnd(2, '0').slice(0, 2) || 0)
+}
+
 const MONTHS = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',

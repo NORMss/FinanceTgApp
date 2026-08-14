@@ -9,7 +9,9 @@ TOKEN = "123456:TEST-TOKEN"
 async def test_health(client: httpx.AsyncClient):
     response = await client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.json() == {"status": "ok"}
+    # Ни версии, ни режима бота: проверка живости не должна работать визиткой сервиса
+    assert (await client.head("/api/health")).status_code == 200
 
 
 async def test_login_requires_valid_init_data(client: httpx.AsyncClient):

@@ -12,6 +12,7 @@ from app.repositories import accounts as accounts_repo
 from app.repositories import categories as categories_repo
 from app.repositories import transactions as tx_repo
 from app.repositories.transactions import TxFilter
+from app.services import catalog as catalog_service
 from app.services import ledger, llm_export, quick_entry
 from app.services import stats as stats_service
 from app.util.dates import resolve_period
@@ -173,13 +174,19 @@ async def quick_add(message: Message, session: AsyncSession, user: User) -> None
     by_id = {category.id: category for category in suggestions}
     ordered = [by_id[cid] for cid in recent_ids if cid in by_id]
     ordered += [category for category in suggestions if category not in ordered]
+    options = [
+        (category, f"{category.icon} {catalog_service.full_name(category, by_id)}".strip())
+        for category in ordered
+    ]
 
     title = "Доход" if parsed.tx_type == TransactionType.INCOME else "Расход"
     category_line = parsed.category_name or "без категории"
+    if parsed.category_id and parsed.category_id in by_id:
+        category_line = catalog_service.full_name(by_id[parsed.category_id], by_id)
     note_line = f"\n<i>{parsed.note}</i>" if parsed.note else ""
     await message.answer(
         f"{title} <b>{format_amount(parsed.amount_minor)}</b> · {category_line}{note_line}",
-        reply_markup=entry_actions(tx.id, ordered),
+        reply_markup=entry_actions(tx.id, options),
     )
 
 
@@ -193,12 +200,20 @@ async def set_category(query: CallbackQuery, session: AsyncSession) -> None:
 
     category = await categories_repo.get(session, category_id)
     await ledger.update_transaction(session, tx, category_id=category_id)
-    await query.answer(f"Категория: {category.name}" if category else "Готово")
+
+    label = "без категории"
+    if category is not None:
+        parents = {}
+        if category.parent_id:
+            parent = await categories_repo.get(session, category.parent_id)
+            parents = {parent.id: parent} if parent else {}
+        label = catalog_service.full_name(category, parents)
+
+    await query.answer(f"Категория: {label}" if category else "Готово")
     if query.message:
         note_line = f"\n<i>{tx.note}</i>" if tx.note else ""
         await query.message.edit_text(
-            f"Расход <b>{format_amount(tx.amount_minor)}</b> · "
-            f"{category.name if category else 'без категории'}{note_line}",
+            f"Расход <b>{format_amount(tx.amount_minor)}</b> · {label}{note_line}",
             reply_markup=query.message.reply_markup,
         )
 

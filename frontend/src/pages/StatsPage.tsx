@@ -5,20 +5,57 @@ import { api } from '../api'
 import ErrorNote from '../components/ErrorNote'
 import PeriodPicker from '../components/PeriodPicker'
 import { formatMoney } from '../format'
+import { haptic } from '../telegram'
 import type { Period } from '../types'
 
-export default function StatsPage() {
+interface Props {
+  currentUserId: string
+}
+
+export default function StatsPage({ currentUserId }: Props) {
   const [period, setPeriod] = useState<Period>('month')
+  const [authorId, setAuthorId] = useState<string | null>(null)
+
+  const users = useQuery({ queryKey: ['users'], queryFn: api.users })
   const summary = useQuery({
-    queryKey: ['summary', period],
-    queryFn: () => api.summary(period),
+    queryKey: ['summary', period, authorId],
+    queryFn: () => api.summary(period, { authorId }),
   })
 
   const data = summary.data
+  const selectAuthor = (id: string | null) => {
+    haptic()
+    setAuthorId(id)
+  }
 
   return (
     <div className="page">
       <PeriodPicker value={period} onChange={setPeriod} />
+
+      {/* Отчёт по одному человеку: те же цифры, но только по его записям */}
+      {(users.data?.length ?? 0) > 1 && (
+        <div className="chips">
+          <button
+            type="button"
+            className="chip"
+            data-active={!authorId}
+            onClick={() => selectAuthor(null)}
+          >
+            Вместе
+          </button>
+          {(users.data ?? []).map((user) => (
+            <button
+              key={user.id}
+              type="button"
+              className="chip"
+              data-active={authorId === user.id}
+              onClick={() => selectAuthor(authorId === user.id ? null : user.id)}
+            >
+              {user.id === currentUserId ? 'Я' : user.display_name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <ErrorNote error={summary.error} />
 
@@ -46,8 +83,13 @@ export default function StatsPage() {
           <p className="section-title">Куда ушли деньги</p>
           <div className="card card--tight">
             {data.by_category.map((item) => (
-              <div className="row" key={item.category_id ?? 'none'}>
-                <div className="row__icon">{item.icon || '•'}</div>
+              <div
+                className={`row${item.parent_id ? ' row--nested' : ''}`}
+                key={item.category_id ?? 'none'}
+              >
+                <div className={`row__icon${item.parent_id ? ' row__icon--small' : ''}`}>
+                  {item.icon || '•'}
+                </div>
                 <div className="row__body">
                   <div className="row__title">{item.name}</div>
                   {/* Полоса нагляднее процента: соотношение видно, не читая цифр */}
@@ -67,20 +109,32 @@ export default function StatsPage() {
         </>
       )}
 
-      {data && data.by_author.length > 1 && (
+      {data && !authorId && data.by_author.length > 1 && (
         <>
-          <p className="section-title">Кто сколько потратил</p>
+          <p className="section-title">Кто сколько записал</p>
           <div className="card card--tight">
             {data.by_author.map((item) => (
-              <div className="row" key={item.user_id}>
+              <div className="row row--tappable" key={item.user_id}>
                 <div className="row__icon">👤</div>
                 <div className="row__body">
-                  <div className="row__title">{item.name}</div>
+                  <div className="row__title">
+                    {item.name}
+                    {item.user_id === currentUserId ? ' (вы)' : ''}
+                  </div>
                 </div>
-                <div className="row__amount">{formatMoney(item.amount_minor)}</div>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--slim"
+                  onClick={() => selectAuthor(item.user_id)}
+                >
+                  {formatMoney(item.amount_minor)}
+                </button>
               </div>
             ))}
           </div>
+          <p className="hint">
+            Это траты по тому, кто их записал. Кто кому должен по общему счёту — на вкладке «Ещё».
+          </p>
         </>
       )}
 

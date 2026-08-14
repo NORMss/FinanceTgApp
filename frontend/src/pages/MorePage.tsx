@@ -9,9 +9,10 @@ import type { User } from '../types'
 interface Props {
   currentUser: User
   onDone: (message: string) => void
+  onOpenCategories: () => void
 }
 
-export default function MorePage({ currentUser, onDone }: Props) {
+export default function MorePage({ currentUser, onDone, onOpenCategories }: Props) {
   const queryClient = useQueryClient()
   const balances = useQuery({ queryKey: ['balances'], queryFn: api.balances })
   const settle = useQuery({ queryKey: ['settle'], queryFn: api.settle })
@@ -40,6 +41,10 @@ export default function MorePage({ currentUser, onDone }: Props) {
   return (
     <div className="page">
       <ErrorNote error={balances.error ?? settle.error ?? sync.error} />
+
+      <button className="btn btn--ghost" type="button" onClick={onOpenCategories}>
+        🗂 Категории и подкатегории
+      </button>
 
       <p className="section-title">Остатки</p>
       <div className="card card--tight">

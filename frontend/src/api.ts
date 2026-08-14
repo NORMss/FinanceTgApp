@@ -3,6 +3,8 @@ import type {
   Account,
   Balances,
   Category,
+  CategoryKind,
+  Filters,
   LoginResponse,
   Period,
   Settlement,
@@ -11,6 +13,7 @@ import type {
   Transaction,
   TransactionPage,
   TransactionType,
+  User,
 } from './types'
 
 const BASE = '/api'
@@ -68,16 +71,60 @@ export async function login(): Promise<LoginResponse> {
   return result
 }
 
+/** Собирает query-строку, пропуская пустые фильтры. */
+function query(params: Record<string, string | number | null | undefined>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') {
+      search.set(key, String(value))
+    }
+  }
+  return search.toString()
+}
+
 export const api = {
   accounts: () => request<Account[]>('/accounts'),
   categories: (kind?: string) =>
     request<Category[]>(`/categories${kind ? `?kind=${kind}` : ''}`),
   recentCategories: () => request<string[]>('/categories/recent'),
-  users: () => request<{ id: string; display_name: string }[]>('/users'),
+  users: () => request<User[]>('/users'),
 
-  transactions: (period: Period, limit = 50, offset = 0) =>
+  createCategory: (payload: {
+    name: string
+    kind?: CategoryKind
+    icon?: string
+    parent_id?: string | null
+  }) =>
+    request<Category>('/categories', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateCategory: (
+    id: string,
+    // parent_id: null — «поднять на верхний уровень», поэтому именно undefined,
+    // а не null означает «не трогать родителя»
+    payload: { name?: string; icon?: string; parent_id?: string | null; archived?: boolean },
+  ) =>
+    request<Category>(`/categories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  deleteCategory: (id: string) =>
+    request<{ result: 'deleted' | 'archived' }>(`/categories/${id}`, { method: 'DELETE' }),
+
+  transactions: (period: Period, filters: Filters = {}, limit = 50, offset = 0) =>
     request<TransactionPage>(
-      `/transactions?period=${period}&limit=${limit}&offset=${offset}`,
+      `/transactions?${query({
+        period,
+        limit,
+        offset,
+        author_ids: filters.authorId,
+        category_ids: filters.categoryId,
+        types: filters.type,
+        search: filters.search,
+      })}`,
     ),
 
   createTransaction: (payload: {
@@ -95,10 +142,33 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  updateTransaction: (
+    id: string,
+    payload: {
+      type?: TransactionType
+      amount?: string
+      category_id?: string | null
+      account_id?: string
+      note?: string
+      occurred_at?: string
+    },
+  ) =>
+    request<Transaction>(`/transactions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
   deleteTransaction: (id: string) =>
     request<void>(`/transactions/${id}`, { method: 'DELETE' }),
 
-  summary: (period: Period) => request<Summary>(`/stats/summary?period=${period}`),
+  summary: (period: Period, filters: Filters = {}) =>
+    request<Summary>(
+      `/stats/summary?${query({
+        period,
+        author_ids: filters.authorId,
+        category_ids: filters.categoryId,
+      })}`,
+    ),
   balances: () => request<Balances>('/stats/balances'),
   settle: () => request<Settlement>('/stats/settle'),
 

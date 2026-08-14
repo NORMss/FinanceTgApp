@@ -1,6 +1,7 @@
 """Двусторонняя синхронизация журнала операций с Google Sheets."""
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -20,6 +21,7 @@ from app.repositories import accounts as accounts_repo
 from app.repositories import categories as categories_repo
 from app.repositories import outbox as outbox_repo
 from app.repositories import users as users_repo
+from app.services import catalog as catalog_service
 from app.services import ledger
 from app.sync.client import SheetsClient, SheetsUnavailable
 from app.sync.mapping import HEADERS, SHEET_TRANSACTIONS, parse_row, row_hash, to_row
@@ -87,9 +89,12 @@ async def _name_maps(session: AsyncSession) -> tuple[dict, dict, dict]:
         account.id: account.name
         for account in await accounts_repo.list_all(session, include_archived=True)
     }
+    all_categories = await categories_repo.list_all(session, include_archived=True)
+    by_id = {category.id: category for category in all_categories}
+    # В таблицу пишем полный путь «Продукты · Пятёрочка»: одно «Пятёрочка» в столбце
+    # не даёт понять, к чему трата относится, и сводные таблицы в Sheets станут бесполезны
     categories = {
-        category.id: category.name
-        for category in await categories_repo.list_all(session, include_archived=True)
+        category.id: catalog_service.full_name(category, by_id) for category in all_categories
     }
     users = {user.id: user.display_name for user in await users_repo.list_all(session)}
     return accounts, categories, users
@@ -167,13 +172,34 @@ async def full_resync(session: AsyncSession, client: SheetsClient) -> PushResult
 
 
 async def _ensure_category(session: AsyncSession, name: str, kind: CategoryKind) -> Category | None:
-    if not name.strip():
+    """Находит категорию по имени из таблицы, при необходимости заводит её.
+
+    Принимает и «Продукты», и полный путь «Продукты · Пятёрочка» — так человек может
+    создать подкатегорию прямо в таблице, не заходя в приложение. Разделителем считаем
+    и «·», и «/»: на клавиатуре телефона второй набрать проще.
+    """
+    raw = name.strip()
+    if not raw:
         return None
-    existing = await categories_repo.get_by_name(session, name, kind=kind)
-    if existing is not None:
-        return existing
-    log.info("создаю категорию из таблицы: %s", name)
-    return await categories_repo.create(session, name=name, kind=kind)
+
+    parts = [part.strip() for part in re.split(r"[·/>]|\|", raw) if part.strip()][:2]
+    if not parts:
+        return None
+
+    parent = await categories_repo.get_by_name(session, parts[0], kind=kind, root_only=True)
+    if parent is None:
+        log.info("создаю категорию из таблицы: %s", parts[0])
+        parent = await categories_repo.create(session, name=parts[0], kind=kind)
+    if len(parts) == 1:
+        return parent
+
+    child = await categories_repo.get_by_name(session, parts[1], kind=kind, parent_id=parent.id)
+    if child is None:
+        log.info("создаю подкатегорию из таблицы: %s · %s", parts[0], parts[1])
+        child = await categories_repo.create(
+            session, name=parts[1], kind=kind, parent_id=parent.id
+        )
+    return child
 
 
 async def pull_edits(session: AsyncSession, client: SheetsClient) -> PullResult:
@@ -244,7 +270,8 @@ async def pull_edits(session: AsyncSession, client: SheetsClient) -> PullResult:
             tx,
             amount_minor=view.amount_minor,
             occurred_at=view.occurred_at,
-            category_id=category.id if category else "",
+            # Пустая ячейка «категория» в таблице — это осознанное «снять категорию»
+            category_id=category.id if category else None,
             note=view.note,
             tags=view.tags,
         )

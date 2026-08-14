@@ -6,6 +6,7 @@
 """
 
 from datetime import datetime
+from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,23 @@ from app.util.dates import now
 from app.util.money import split_evenly
 
 ENTITY = "transaction"
+
+
+class UnsetType:
+    """Отличает «поле не передали» от «передали null».
+
+    Без этого нельзя снять категорию с операции: `category_id=None` читается и как
+    «не трогай», и как «очисти», а нужно и то, и другое.
+    """
+
+    def __repr__(self) -> str:  # pragma: no cover — только для отладочного вывода
+        return "UNSET"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+UNSET: Final = UnsetType()
 
 
 class LedgerError(ValueError):
@@ -125,38 +143,63 @@ async def update_transaction(
     *,
     amount_minor: int | None = None,
     occurred_at: datetime | None = None,
-    category_id: str | None = None,
+    tx_type: TransactionType | None = None,
+    category_id: str | None | UnsetType = UNSET,
     account_id: str | None = None,
+    counter_account_id: str | None | UnsetType = UNSET,
     note: str | None = None,
     tags: str | None = None,
-    splits: dict[str, int] | None = None,
+    splits: dict[str, int] | None | UnsetType = UNSET,
 ) -> Transaction:
+    """Правит существующую операцию. Не переданные поля остаются как были.
+
+    Менять можно всё, включая тип: «записал как расход, а это был доход» — самая
+    частая ошибка ввода, и переписывать операцию заново ради этого не нужно.
+    """
     if amount_minor is not None:
         if amount_minor <= 0:
             raise LedgerError("сумма должна быть положительной")
         tx.amount_minor = amount_minor
     if occurred_at is not None:
         tx.occurred_at = occurred_at
+    if tx_type is not None:
+        tx.type = tx_type
     if account_id is not None:
         if await accounts_repo.get(session, account_id) is None:
             raise LedgerError("счёт не найден")
         tx.account_id = account_id
-    if category_id is not None:
+    if not isinstance(category_id, UnsetType):
         tx.category_id = category_id or None
+    if not isinstance(counter_account_id, UnsetType):
+        tx.counter_account_id = counter_account_id or None
     if note is not None:
         tx.note = note.strip()
     if tags is not None:
         tx.tags = tags.strip()
 
+    if tx.type == TransactionType.TRANSFER:
+        if not tx.counter_account_id:
+            raise LedgerError("для перевода нужен счёт назначения")
+        if tx.counter_account_id == tx.account_id:
+            raise LedgerError("нельзя перевести на тот же счёт")
+        if await accounts_repo.get(session, tx.counter_account_id) is None:
+            raise LedgerError("счёт назначения не найден")
+        # У перевода нет категории: деньги не потрачены, а переложены
+        tx.category_id = None
+    else:
+        tx.counter_account_id = None
+
     account = await accounts_repo.get(session, tx.account_id)
     assert account is not None  # проверено выше либо при создании
-    if splits is not None or amount_minor is not None:
+
+    # Доли пересчитываем, когда изменилось хоть что-то, от чего они зависят
+    if not isinstance(splits, UnsetType) or amount_minor is not None or tx_type is not None:
         resolved = await _resolve_splits(
             session,
             account=account,
             tx_type=tx.type,
             amount_minor=tx.amount_minor,
-            explicit=splits,
+            explicit=None if isinstance(splits, UnsetType) else splits,
         )
         tx.splits = [
             TxSplit(user_id=user_id, share_minor=share)

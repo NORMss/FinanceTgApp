@@ -34,12 +34,16 @@ def open_app_button() -> InlineKeyboardMarkup:
     )
 
 
-def entry_actions(tx_id: str, categories: list[Category]) -> InlineKeyboardMarkup:
-    """Кнопки под карточкой добавленной операции: сменить категорию или удалить."""
+def entry_actions(tx_id: str, options: list[tuple[Category, str]]) -> InlineKeyboardMarkup:
+    """Кнопки под карточкой добавленной операции: сменить категорию или удалить.
+
+    Подпись приходит готовой: у подкатегории на кнопке должен стоять полный путь,
+    иначе «Пятёрочка» и «Магнит» в списке выглядят как отдельные категории верхнего
+    уровня и непонятно, куда попадёт трата.
+    """
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
-    for category in categories[:6]:
-        label = f"{category.icon} {category.name}".strip()
+    for category, label in options[:6]:
         row.append(InlineKeyboardButton(text=label, callback_data=f"cat:{tx_id}:{category.id}"))
         if len(row) == 2:
             rows.append(row)

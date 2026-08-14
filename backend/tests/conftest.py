@@ -22,6 +22,7 @@ os.environ.update(
         "SHEETS_ENABLED": "false",
         "DEV_AUTH_BYPASS": "false",
         "PUBLIC_URL": "https://example.test",
+        "WEBHOOK_SECRET": "test-webhook-secret",
     }
 )
 

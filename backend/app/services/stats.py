@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import TransactionType
+from app.models import Category, TransactionType
 from app.repositories import accounts as accounts_repo
 from app.repositories import categories as categories_repo
 from app.repositories import transactions as tx_repo
@@ -17,9 +17,11 @@ class CategoryTotal:
     category_id: str | None
     name: str
     icon: str
-    amount_minor: int
+    amount_minor: int  # вместе с подкатегориями
     count: int
     share: float  # доля в общих тратах периода, 0..1
+    parent_id: str | None = None
+    own_minor: int = 0  # потрачено прямо на эту категорию, без детей
 
 
 @dataclass(slots=True)
@@ -48,17 +50,7 @@ async def period_summary(session: AsyncSession, flt: TxFilter) -> dict:
     expense_filter = _with_types(flt, [TransactionType.EXPENSE])
     rows = await tx_repo.totals_by_category(session, expense_filter)
     catalog = {c.id: c for c in await categories_repo.list_all(session, include_archived=True)}
-    by_category = [
-        CategoryTotal(
-            category_id=category_id,
-            name=catalog[category_id].name if category_id in catalog else "Без категории",
-            icon=catalog[category_id].icon if category_id in catalog else "",
-            amount_minor=amount,
-            count=count,
-            share=(amount / expense) if expense else 0.0,
-        )
-        for category_id, amount, count in rows
-    ]
+    by_category = _build_category_tree(rows, catalog, expense)
 
     authors = await tx_repo.totals_by_author(session, expense_filter)
     users = {u.id: u.display_name for u in await users_repo.list_all(session)}
@@ -78,6 +70,69 @@ async def period_summary(session: AsyncSession, flt: TxFilter) -> dict:
 
 def _with_types(flt: TxFilter, types: list[TransactionType]) -> TxFilter:
     return replace(flt, types=types)
+
+
+def _build_category_tree(
+    rows: list[tuple[str | None, int, int]],
+    catalog: dict[str, Category],
+    expense_total: int,
+) -> list[CategoryTotal]:
+    """Плоский список сумм превращает в дерево, свёрнутое в родителей.
+
+    В отчёте нужны обе цифры: «на супермаркеты ушло 12 000» и из чего они сложились.
+    Поэтому родитель показывает сумму вместе с детьми (`amount_minor`), а `own_minor`
+    хранит то, что записали прямо на него, без разбивки. Порядок плоский, но осмысленный:
+    родитель, сразу за ним его подкатегории — клиенту остаётся только сделать отступ.
+    """
+    own: dict[str | None, tuple[int, int]] = {
+        category_id: (amount, count) for category_id, amount, count in rows
+    }
+
+    totals: dict[str | None, int] = {}
+    counts: dict[str | None, int] = {}
+    for category_id, (amount, count) in own.items():
+        category = catalog.get(category_id or "")
+        keys = [category_id]
+        if category is not None and category.parent_id:
+            keys.append(category.parent_id)
+        for key in keys:
+            totals[key] = totals.get(key, 0) + amount
+            counts[key] = counts.get(key, 0) + count
+
+    def node(category_id: str | None) -> CategoryTotal:
+        category = catalog.get(category_id or "")
+        amount = totals.get(category_id, 0)
+        return CategoryTotal(
+            category_id=category_id,
+            name=category.name if category else "Без категории",
+            icon=category.icon if category else "",
+            amount_minor=amount,
+            count=counts.get(category_id, 0),
+            share=(amount / expense_total) if expense_total else 0.0,
+            parent_id=category.parent_id if category else None,
+            own_minor=own.get(category_id, (0, 0))[0],
+        )
+
+    roots = [
+        category_id
+        for category_id in totals
+        if not (category_id and catalog.get(category_id) and catalog[category_id].parent_id)
+    ]
+    result: list[CategoryTotal] = []
+    for root_id in sorted(roots, key=lambda key: totals.get(key, 0), reverse=True):
+        result.append(node(root_id))
+        children = [
+            category_id
+            for category_id in own
+            if category_id
+            and catalog.get(category_id)
+            and catalog[category_id].parent_id == root_id
+        ]
+        result.extend(
+            node(child_id)
+            for child_id in sorted(children, key=lambda key: own[key][0], reverse=True)
+        )
+    return result
 
 
 async def account_balances(session: AsyncSession) -> tuple[list[AccountBalance], int]:

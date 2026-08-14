@@ -1,7 +1,8 @@
-from sqlalchemy import select, update
+from sqlalchemy import delete as sql_delete
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Category, CategoryKind, CategoryRule
+from app.models import Category, CategoryKind, CategoryRule, Transaction
 
 
 async def get(session: AsyncSession, category_id: str) -> Category | None:
@@ -24,11 +25,20 @@ async def list_all(
 
 
 async def get_by_name(
-    session: AsyncSession, name: str, *, kind: CategoryKind | None = None
+    session: AsyncSession,
+    name: str,
+    *,
+    kind: CategoryKind | None = None,
+    parent_id: str | None = None,
+    root_only: bool = False,
 ) -> Category | None:
     query = select(Category).where(Category.name.ilike(name.strip()))
     if kind is not None:
         query = query.where(Category.kind == kind)
+    if parent_id is not None:
+        query = query.where(Category.parent_id == parent_id)
+    elif root_only:
+        query = query.where(Category.parent_id.is_(None))
     result = await session.execute(query.limit(1))
     return result.scalar_one_or_none()
 
@@ -46,6 +56,33 @@ async def create(
     session.add(category)
     await session.flush()
     return category
+
+
+async def list_children(session: AsyncSession, parent_id: str) -> list[Category]:
+    query = (
+        select(Category)
+        .where(Category.parent_id == parent_id)
+        .order_by(Category.sort, Category.name)
+    )
+    result = await session.execute(query)
+    return list(result.scalars())
+
+
+async def usage_count(session: AsyncSession, category_id: str) -> int:
+    """Сколько живых операций ссылается на категорию. Ноль — можно удалять насовсем."""
+    query = select(func.count(Transaction.id)).where(
+        Transaction.category_id == category_id,
+        Transaction.deleted_at.is_(None),
+    )
+    result = await session.execute(query)
+    return int(result.scalar_one())
+
+
+async def remove(session: AsyncSession, category: Category) -> None:
+    """Физическое удаление. Вызывать только для категории без операций и без детей."""
+    await session.execute(sql_delete(CategoryRule).where(CategoryRule.category_id == category.id))
+    await session.delete(category)
+    await session.flush()
 
 
 async def list_rules(session: AsyncSession) -> list[CategoryRule]:

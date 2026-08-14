@@ -2,7 +2,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import CurrentUser, SessionDep
 from app.api.periods import period_bounds
@@ -14,6 +14,7 @@ from app.api.schemas import (
     UserBalanceOut,
 )
 from app.repositories.transactions import TxFilter
+from app.services import catalog as catalog_service
 from app.services import stats as stats_service
 from app.util.money import format_amount
 
@@ -23,9 +24,25 @@ PeriodDep = Annotated[tuple[datetime, datetime], Depends(period_bounds)]
 
 
 @router.get("/summary", response_model=SummaryOut)
-async def summary(session: SessionDep, _: CurrentUser, bounds: PeriodDep) -> SummaryOut:
+async def summary(
+    session: SessionDep,
+    _: CurrentUser,
+    bounds: PeriodDep,
+    author_ids: Annotated[list[str] | None, Query()] = None,
+    category_ids: Annotated[list[str] | None, Query()] = None,
+    account_ids: Annotated[list[str] | None, Query()] = None,
+) -> SummaryOut:
+    """Итоги за период. Фильтры те же, что у списка операций, — иначе отчёт
+    показывал бы одно, а история по тем же условиям другое."""
     start, end = bounds
-    data = await stats_service.period_summary(session, TxFilter(start=start, end=end))
+    flt = TxFilter(
+        start=start,
+        end=end,
+        author_ids=author_ids or [],
+        category_ids=await catalog_service.expand_ids(session, category_ids or []),
+        account_ids=account_ids or [],
+    )
+    data = await stats_service.period_summary(session, flt)
     return SummaryOut(
         period_start=start,
         period_end=end,
