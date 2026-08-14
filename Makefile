@@ -45,10 +45,22 @@ up-proxy: ## Поднять только приложение на 127.0.0.1 —
 	docker compose --profile build run --rm frontend
 	docker compose -f docker-compose.yml -f docker-compose.behind-proxy.yml up -d --build app
 
-up-shared: ## Поднять приложение в сети чужого прокси-контейнера (нужен PROXY_NETWORK в .env)
+up-shared: check-proxy-net ## Поднять приложение в сети чужого прокси-контейнера (нужен PROXY_NETWORK в .env)
 	mkdir -p data
 	docker compose --profile build run --rm frontend
 	docker compose -f docker-compose.yml -f docker-compose.shared-net.yml up -d --build app
+
+check-proxy-net: ## Проверить, что сеть из PROXY_NETWORK существует
+	@net=$$(grep -E '^PROXY_NETWORK=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\''' | tr -d '\r'); \
+	if [ -z "$$net" ]; then \
+		echo "В .env не задан PROXY_NETWORK — имя docker-сети, в которой работает ваш прокси."; \
+	elif docker network inspect "$$net" >/dev/null 2>&1; then \
+		echo "Сеть $$net найдена."; exit 0; \
+	else \
+		echo "Сеть '$$net' не существует."; \
+	fi; \
+	echo; echo "Доступные сети:"; docker network ls --format '  {{.Name}}'; \
+	echo; echo "Впишите нужную строкой PROXY_NETWORK=<имя> в .env"; exit 1
 
 down: ## Остановить docker
 	docker compose down
@@ -56,4 +68,4 @@ down: ## Остановить docker
 logs: ## Логи приложения
 	docker compose logs -f app
 
-.PHONY: help setup migrate revision api web test lint build data up up-proxy up-shared down logs
+.PHONY: help setup migrate revision api web test lint build data up up-proxy up-shared check-proxy-net down logs
