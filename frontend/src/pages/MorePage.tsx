@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api } from '../api'
+import ErrorNote from '../components/ErrorNote'
 import { formatMoney } from '../format'
 import { notify } from '../telegram'
 import type { User } from '../types'
@@ -38,6 +39,8 @@ export default function MorePage({ currentUser, onDone }: Props) {
 
   return (
     <div className="page">
+      <ErrorNote error={balances.error ?? settle.error ?? sync.error} />
+
       <p className="section-title">Остатки</p>
       <div className="card card--tight">
         {(balances.data?.accounts ?? []).map((account) => (

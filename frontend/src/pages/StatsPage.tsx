@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { api } from '../api'
+import ErrorNote from '../components/ErrorNote'
 import PeriodPicker from '../components/PeriodPicker'
 import { formatMoney } from '../format'
 import type { Period } from '../types'
@@ -18,6 +19,8 @@ export default function StatsPage() {
   return (
     <div className="page">
       <PeriodPicker value={period} onChange={setPeriod} />
+
+      <ErrorNote error={summary.error} />
 
       <div className="card">
         <div className="totals">
