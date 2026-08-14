@@ -50,6 +50,9 @@ up-shared: check-proxy-net ## Поднять приложение в сети ч
 	docker compose --profile build run --rm frontend
 	docker compose -f docker-compose.yml -f docker-compose.shared-net.yml up -d --build app
 
+check-sheets: ## Проверить доступ к Google Sheets (в запущенном контейнере)
+	docker compose exec -T app python -m app.sync.check
+
 check-proxy-net: ## Проверить, что сеть из PROXY_NETWORK существует
 	@net=$$(grep -E '^PROXY_NETWORK=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\''' | tr -d '\r'); \
 	if [ -z "$$net" ]; then \
@@ -68,4 +71,4 @@ down: ## Остановить docker
 logs: ## Логи приложения
 	docker compose logs -f app
 
-.PHONY: help setup migrate revision api web test lint build data up up-proxy up-shared check-proxy-net down logs
+.PHONY: help setup migrate revision api web test lint build data up up-proxy up-shared check-sheets check-proxy-net down logs
