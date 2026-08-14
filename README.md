@@ -100,8 +100,19 @@ docker compose up -d --build
 `proxy_pass`:
 
 ```bash
+make up-proxy
+```
+
+или то же самое вручную:
+
+```bash
+docker compose --profile build run --rm frontend
 docker compose -f docker-compose.yml -f docker-compose.behind-proxy.yml up -d --build app
 ```
+
+Имя сервиса `app` в конце обязательно. Без него Compose поднимет **все** сервисы, включая
+Caddy, и вы снова получите `Bind for 0.0.0.0:80 failed: port is already allocated`.
+По той же причине в этом режиме нельзя запускать `make up`.
 
 Приложение слушает `127.0.0.1:8000` (порт меняется переменной `APP_PORT`), снаружи оно
 недоступно — только через ваш прокси. Дальше добавьте виртуальный хост.
@@ -137,6 +148,42 @@ finance.example.com {
 
 Делить пути между API и статикой не нужно: `/api/*` и `/tg/*` обрабатывает FastAPI,
 всё остальное отдаётся как файлы Mini App из `frontend/dist`.
+
+### Если внешний прокси сам работает в контейнере
+
+Тогда `127.0.0.1` не подойдёт: для контейнера прокси это его собственный loopback, а не хост.
+Вместо проброса портов подключаем приложение к сети прокси и ходим по DNS-имени.
+
+Найдите сеть чужого проекта и пропишите её в `.env`:
+
+```bash
+docker network ls
+```
+
+```bash
+PROXY_NETWORK=имя_сети_прокси
+```
+
+Запуск (порты наружу не публикуются вообще):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.shared-net.yml up -d --build app
+```
+
+В сети прокси приложение доступно под именем `finance-app`. Site-блок для Caddy — сертификат
+он выпустит сам, как для остальных своих доменов:
+
+```caddyfile
+finance.example.com {
+	reverse_proxy finance-app:8000
+}
+```
+
+После правки конфига прокси его надо перезагрузить:
+
+```bash
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
 
 ### Бэкап
 

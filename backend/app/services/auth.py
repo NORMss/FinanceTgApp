@@ -35,8 +35,10 @@ async def login(session: AsyncSession, init_data: str) -> tuple[User, str, int]:
         tg_user = validate_init_data(
             init_data, settings.bot_token, settings.init_data_max_age_seconds
         )
-    except InitDataError:
-        log.info("невалидная initData")
+    except InitDataError as exc:
+        # Причину пишем в лог, наружу отдаём только 401: подсказывать атакующему, что
+        # именно не сошлось, незачем, а при настройке сервера эта строка экономит час
+        log.warning("вход отклонён: %s", exc)
         raise
 
     user = await register_user(session, tg_user)

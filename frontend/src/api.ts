@@ -27,14 +27,24 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  })
+  let response: Response
+  try {
+    response = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
+    })
+  } catch (cause) {
+    // fetch бросает голый TypeError и на обрыв сети, и на упавший прокси, и на CORS.
+    // Превращаем в ApiError со статусом 0, чтобы наверху был один тип ошибки.
+    throw new ApiError(
+      `Сервер не ответил (${cause instanceof Error ? cause.message : 'нет связи'})`,
+      0,
+    )
+  }
 
   if (!response.ok) {
     // FastAPI кладёт человекочитаемое сообщение в detail — показываем его как есть

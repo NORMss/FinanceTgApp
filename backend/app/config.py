@@ -2,6 +2,7 @@ from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,6 +47,25 @@ class Settings(BaseSettings):
     google_credentials_file: Path = Path("./data/google-credentials.json")
     google_spreadsheet_id: str = ""
     sheets_sync_interval: int = 60
+
+    @field_validator("bot_token", "webhook_secret", "jwt_secret", mode="before")
+    @classmethod
+    def _strip_secret(cls, value: object) -> object:
+        """Срезает невидимый мусор вокруг секретов.
+
+        Файл .env, сохранённый с переводами строк Windows, даёт токену хвост `\\r`,
+        а копипаста — пробел или кавычки. Токен при этом выглядит правильным, но HMAC
+        считается от другой строки, и Mini App получает 401 с «подпись не совпала».
+        """
+        if isinstance(value, str):
+            return value.strip().strip("\"'").strip()
+        return value
+
+    @property
+    def bot_id(self) -> int | None:
+        """Числовая часть токена до двоеточия — это id бота, не секрет."""
+        head = self.bot_token.split(":", 1)[0]
+        return int(head) if head.isdigit() else None
 
     @cached_property
     def allowed_ids(self) -> frozenset[int]:

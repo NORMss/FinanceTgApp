@@ -40,6 +40,14 @@ async def lifespan(app: FastAPI):
     if settings.bot_mode != "off" and settings.bot_token:
         app.state.bot = create_bot()
         app.state.dispatcher = create_dispatcher()
+        # Печатаем, чьим токеном представилось приложение. Подпись initData считается
+        # именно этим токеном, поэтому при 401 первым делом сверяют username здесь
+        # с ботом, из меню которого открыли Mini App.
+        try:
+            me = await app.state.bot.get_me()
+            log.info("токен принадлежит боту @%s (id=%s)", me.username, me.id)
+        except Exception as exc:  # noqa: BLE001 — Telegram может быть недоступен на старте
+            log.warning("не удалось получить данные бота: %s", exc)
         if settings.bot_mode == "polling":
             polling_task = await start_polling(app.state.bot, app.state.dispatcher)
         else:

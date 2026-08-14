@@ -35,10 +35,20 @@ data: ## Подготовить каталог данных под пользо�
 	mkdir -p data
 	sudo chown -R 10001:10001 data
 
-up: ## Поднять всё в docker (прод)
+up: ## Поднять всё в docker: приложение + свой Caddy (нужны свободные порты 80 и 443)
 	mkdir -p data
 	docker compose --profile build run --rm frontend
 	docker compose up -d --build
+
+up-proxy: ## Поднять только приложение на 127.0.0.1 — когда 80/443 занял чужой веб-сервер
+	mkdir -p data
+	docker compose --profile build run --rm frontend
+	docker compose -f docker-compose.yml -f docker-compose.behind-proxy.yml up -d --build app
+
+up-shared: ## Поднять приложение в сети чужого прокси-контейнера (нужен PROXY_NETWORK в .env)
+	mkdir -p data
+	docker compose --profile build run --rm frontend
+	docker compose -f docker-compose.yml -f docker-compose.shared-net.yml up -d --build app
 
 down: ## Остановить docker
 	docker compose down
@@ -46,4 +56,4 @@ down: ## Остановить docker
 logs: ## Логи приложения
 	docker compose logs -f app
 
-.PHONY: help setup migrate revision api web test lint build data up down logs
+.PHONY: help setup migrate revision api web test lint build data up up-proxy up-shared down logs

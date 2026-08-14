@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 
 import { api } from '../api'
+import ErrorNote from '../components/ErrorNote'
 import PeriodPicker from '../components/PeriodPicker'
 import { formatDay, formatMoney, formatTime } from '../format'
 import { notify } from '../telegram'
@@ -53,6 +54,8 @@ export default function HistoryPage({ onDone }: Props) {
   return (
     <div className="page">
       <PeriodPicker value={period} onChange={setPeriod} />
+
+      <ErrorNote error={page.error ?? remove.error} />
 
       {page.isPending && <p className="hint">Загружаем…</p>}
       {page.data?.items.length === 0 && (
