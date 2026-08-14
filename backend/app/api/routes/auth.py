@@ -19,7 +19,12 @@ async def login(payload: LoginRequest, session: SessionDep) -> LoginResponse:
             # Пустая initData допустима только в dev-режиме — иначе это попытка зайти мимо Telegram
             user, token, expires_at = await auth_service.dev_login(session)
     except InitDataError as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "initData не прошла проверку") from exc
+        # Причину не скрываем: она не даёт атакующему ничего (сравнение хеша
+        # константное по времени, подобрать подпись без токена нельзя), зато при
+        # настройке сразу видно, токен не тот или строка протухла
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, f"initData не прошла проверку: {exc}"
+        ) from exc
     except auth_service.AccessDenied as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
 
