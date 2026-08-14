@@ -2,14 +2,16 @@
 
 Алгоритм по документации Telegram:
   1. Разобрать initData как query string.
-  2. Собрать data-check-string: все пары кроме `hash` и `signature`, отсортированные
-     по ключу, склеенные через \\n в формате `key=value`.
+  2. Собрать data-check-string: все пары КРОМЕ `hash`, отсортированные по ключу,
+     склеенные через \\n в формате `key=value`.
   3. secret_key = HMAC_SHA256(key="WebAppData", msg=bot_token)
   4. Ожидаемый хеш = HMAC_SHA256(key=secret_key, msg=data_check_string) в hex.
   5. Сравнить с присланным `hash` в constant time.
 
-`signature` исключается из проверки: это отдельная Ed25519-подпись для сторонних сервисов,
-которым нельзя показывать токен бота. Нам она не нужна — токен свой.
+Из строки исключается ровно одно поле — `hash`. Поле `signature` (отдельная Ed25519-подпись
+для сторонних сервисов, которым нельзя показывать токен бота) выкидывать нельзя: Telegram
+считает `hash` по всем остальным полям, включая его. Если убрать `signature`, подпись не
+сойдётся на любом клиенте, который это поле присылает.
 
 Дополнительно проверяем `auth_date`: без этого украденная строка initData работает вечно.
 """
@@ -56,7 +58,6 @@ def validate_init_data(
 
     fields = parse_init_data(init_data)
     received_hash = fields.pop("hash", "")
-    fields.pop("signature", None)
     if not received_hash:
         raise InitDataError("в initData нет hash")
 
@@ -92,13 +93,23 @@ def validate_init_data(
     )
 
 
-def build_init_data(bot_token: str, user: dict, auth_date: int | None = None) -> str:
-    """Собирает валидную initData. Нужна только тестам — в проде её делает Telegram."""
+def build_init_data(
+    bot_token: str,
+    user: dict,
+    auth_date: int | None = None,
+    extra: dict[str, str] | None = None,
+) -> str:
+    """Собирает валидную initData. Нужна только тестам — в проде её делает Telegram.
+
+    `extra` позволяет добавить поля, которые присылают реальные клиенты (`signature`,
+    `query_id`, `chat_instance`), и убедиться, что они не ломают проверку.
+    """
     from urllib.parse import urlencode
 
     fields = {
         "auth_date": str(auth_date or int(now().timestamp())),
         "user": json.dumps(user, separators=(",", ":"), ensure_ascii=False),
+        **(extra or {}),
     }
     check_string = "\n".join(f"{key}={fields[key]}" for key in sorted(fields))
     secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
