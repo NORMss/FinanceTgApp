@@ -1,0 +1,46 @@
+# Демо-режим: приложение с готовым журналом за три месяца, без бота и без Telegram.
+#
+#   docker compose -f docker-compose.demo.yml --profile build run --rm frontend
+#   docker compose -f docker-compose.demo.yml up --build
+#
+# Открывается на http://localhost:8000. Вход без Telegram — включён DEV_AUTH_BYPASS,
+# поэтому этот файл годится только для показа на своей машине. В интернет его не
+# выставляют: любой, кто откроет адрес, войдёт как Аня.
+services:
+  demo:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////data/demo.db
+      STATIC_DIR: /srv/www
+      PUBLIC_URL: http://localhost:8000
+      BOT_MODE: "off"
+      SHEETS_ENABLED: "false"
+      DEV_AUTH_BYPASS: "true"
+      DEV_TELEGRAM_ID: "900000001"
+      ALLOWED_TELEGRAM_IDS: "900000001,900000002"
+      JWT_SECRET: demo-only-not-a-real-secret
+      LOG_LEVEL: WARNING
+    # База пересоздаётся при каждом запуске: демо должно выглядеть одинаково
+    # у всех, кто его открыл, сколько бы раз по нему ни кликали
+    command: >
+      sh -c "alembic upgrade head
+      && python -m app.demo --reset
+      && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log --no-server-header"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./frontend/dist:/srv/www:ro
+      - demo_data:/data
+
+  # Разовая сборка Mini App: результат ложится в ./frontend/dist
+  frontend:
+    image: node:22-alpine
+    profiles: ["build"]
+    working_dir: /src
+    volumes:
+      - ./frontend:/src
+    command: sh -c "npm ci --no-audit --no-fund && npm run build"
+
+volumes:
+  demo_data:

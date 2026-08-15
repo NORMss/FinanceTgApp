@@ -2,10 +2,36 @@
 
 import httpx
 
+from app.security.initdata import build_init_data
+from tests.conftest import USER_B
+
+TOKEN = "123456:TEST-TOKEN"
+
 
 async def _category(client: httpx.AsyncClient, name: str) -> dict:
     categories = (await client.get("/api/categories?kind=expense")).json()
     return next(item for item in categories if item["name"] == name)
+
+
+async def test_shared_expense_with_two_people_is_listed(auth_client: httpx.AsyncClient):
+    """Регрессия: с двумя участниками список операций отдавал 500.
+
+    Трата с общего счёта делится пополам, и в ответе появляются доли. Схема SplitOut
+    не умела читать ORM-объект, но заметить это на одном пользователе невозможно —
+    доли тогда просто не создаются. Баг нашёлся на демо-данных, где участников двое.
+    """
+    await auth_client.post("/api/auth/login", json={"init_data": build_init_data(TOKEN, USER_B)})
+
+    created = await auth_client.post(
+        "/api/transactions", json={"type": "expense", "amount": "1000"}
+    )
+    assert created.status_code == 201, created.text
+    assert len(created.json()["splits"]) == 2
+
+    listing = await auth_client.get("/api/transactions?period=month")
+    assert listing.status_code == 200, listing.text
+    splits = listing.json()["items"][0]["splits"]
+    assert sorted(item["share_minor"] for item in splits) == [50_000, 50_000]
 
 
 async def test_edits_every_field(auth_client: httpx.AsyncClient):

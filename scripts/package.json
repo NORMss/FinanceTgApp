@@ -1,0 +1,13 @@
+{
+  "name": "financetg-scripts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Служебные скрипты сопровождения: съёмка скриншотов для README",
+  "scripts": {
+    "screenshots": "node screenshots.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

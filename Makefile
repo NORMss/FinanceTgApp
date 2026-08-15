@@ -2,6 +2,17 @@
 PY := backend/.venv/bin/python
 PIP := backend/.venv/bin/pip
 
+# Демо живёт в своей базе и со своими настройками, чтобы не задеть рабочую.
+# Переменные окружения перекрывают .env, поэтому личный .env в корне не мешает.
+DEMO_ENV := \
+	DATABASE_URL=sqlite+aiosqlite:///$(CURDIR)/data/demo.db \
+	STATIC_DIR=$(CURDIR)/frontend/dist \
+	PUBLIC_URL=http://localhost:8000 \
+	BOT_MODE=off SHEETS_ENABLED=false \
+	DEV_AUTH_BYPASS=true DEV_TELEGRAM_ID=900000001 \
+	ALLOWED_TELEGRAM_IDS=900000001,900000002 \
+	JWT_SECRET=demo-only-not-a-real-secret LOG_LEVEL=WARNING
+
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
@@ -30,6 +41,24 @@ lint: ## Проверить стиль бэкенда
 
 build: ## Собрать фронт в frontend/dist
 	cd frontend && npm run build
+
+demo: demo-build ## Демо на http://localhost:8000 — готовый журнал за 3 месяца, без Telegram
+	@echo
+	@echo "  Демо: http://localhost:8000  (Ctrl+C — остановить)"
+	@echo "  Вы входите как Аня; второй участник — Борис."
+	@echo
+	@cd backend && $(DEMO_ENV) .venv/bin/uvicorn app.main:app --port 8000 --no-access-log
+
+demo-build: ## Собрать фронт и пересоздать демо-базу, не запуская сервер
+	@test -x backend/.venv/bin/python || { echo "Сначала: make setup"; exit 1; }
+	@mkdir -p data
+	@cd frontend && npm install --silent --no-audit --no-fund && npm run build
+	@cd backend && $(DEMO_ENV) .venv/bin/alembic upgrade head >/dev/null
+	@cd backend && $(DEMO_ENV) .venv/bin/python -m app.demo --reset
+
+demo-docker: ## То же самое в докере — если нет локальных Python и Node
+	docker compose -f docker-compose.demo.yml --profile build run --rm frontend
+	docker compose -f docker-compose.demo.yml up --build
 
 data: ## Подготовить каталог данных под пользователя контейнера (нужен sudo)
 	mkdir -p data
@@ -71,4 +100,4 @@ down: ## Остановить docker
 logs: ## Логи приложения
 	docker compose logs -f app
 
-.PHONY: help setup migrate revision api web test lint build data up up-proxy up-shared check-sheets check-proxy-net down logs
+.PHONY: help setup migrate revision api web test lint build demo demo-build demo-docker data up up-proxy up-shared check-sheets check-proxy-net down logs

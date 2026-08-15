@@ -100,7 +100,15 @@ class CategoryDeleteOut(BaseModel):
 # --- операции ---
 
 
-class SplitOut(BaseModel):
+class SplitOut(ORMModel):
+    """Доля участника в операции.
+
+    Именно ORMModel, а не BaseModel: эта схема разбирает объект TxSplit из базы внутри
+    TransactionOut. С обычным BaseModel список операций падал с 500, но только когда
+    участников двое — у одного пользователя доли не создаются вовсе, и на пустой
+    базе ошибка не проявлялась.
+    """
+
     user_id: str
     share_minor: int
 

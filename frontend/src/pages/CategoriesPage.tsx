@@ -30,6 +30,16 @@ interface FormState {
 
 const EMPTY: FormState = { name: '', icon: '', parentId: null, kind: 'expense' }
 
+/** «1 подкатегория», «4 подкатегории», «11 подкатегорий». */
+function plural(count: number): string {
+  const tail = count % 100
+  const last = count % 10
+  if (tail > 4 && tail < 21) return `${count} подкатегорий`
+  if (last === 1) return `${count} подкатегория`
+  if (last > 1 && last < 5) return `${count} подкатегории`
+  return `${count} подкатегорий`
+}
+
 /**
  * Управление справочником: создать категорию или подкатегорию, переименовать,
  * поменять значок, спрятать.
@@ -187,7 +197,7 @@ export default function CategoriesPage({ onBack, onDone }: Props) {
             <div className="row__body">
               <div className="row__title">{category.name}</div>
               <div className="row__sub">
-                {children.length > 0 ? `${children.length} подкатегорий` : 'без подкатегорий'}
+                {children.length > 0 ? plural(children.length) : 'без подкатегорий'}
               </div>
             </div>
             <div className="row__tools">
