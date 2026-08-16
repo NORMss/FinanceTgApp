@@ -26,6 +26,31 @@ async def get_shared(session: AsyncSession) -> Account | None:
     return result.scalar_one_or_none()
 
 
+async def get_personal(session: AsyncSession, owner_id: str) -> Account | None:
+    result = await session.execute(
+        select(Account)
+        .where(
+            Account.owner_id == owner_id,
+            Account.is_shared.is_(False),
+            Account.archived.is_(False),
+        )
+        .order_by(Account.sort)
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def default_for(session: AsyncSession, owner_id: str) -> Account | None:
+    """Счёт, на который пишется операция, если счёт не выбран явно.
+
+    Свой личный, и только если его почему-то нет — общий. Раньше умолчанием был общий
+    счёт, и это оказалось неверно: большая часть трат в семье всё-таки личная, а каждая
+    попавшая на общий счёт трата создаёт долг второму участнику, которого не было.
+    Общий счёт остаётся, но теперь его выбирают осознанно.
+    """
+    return await get_personal(session, owner_id) or await get_shared(session)
+
+
 async def create(
     session: AsyncSession,
     *,

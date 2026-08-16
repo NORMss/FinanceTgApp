@@ -134,25 +134,16 @@ async def ensure_reference_data(session: AsyncSession) -> None:
                     session, pattern=pattern, category_id=category.id, priority=50
                 )
 
-    if await accounts_repo.get_shared(session) is None and await _is_empty(session, Account):
-        await accounts_repo.create(
-            session,
-            name=SHARED_ACCOUNT_NAME,
-            kind=AccountKind.CARD,
-            currency=settings.base_currency,
-            is_shared=True,
-            sort=0,
-        )
-
+    # Общий счёт здесь намеренно не заводится. Он не нейтрален: каждая трата с него
+    # делится пополам и создаёт долг второму участнику, а по умолчанию таким счётом
+    # пользовались просто потому, что он оказывался первым в списке. Теперь его заводят
+    # руками — кнопкой в приложении, когда действительно есть общий кошелёк.
     await session.flush()
 
 
 async def ensure_personal_account(session: AsyncSession, user: User) -> Account:
-    """У каждого участника должен быть личный счёт: без него не сделать перевод-погашение."""
-    result = await session.execute(
-        select(Account).where(Account.owner_id == user.id, Account.is_shared.is_(False)).limit(1)
-    )
-    existing = result.scalar_one_or_none()
+    """Личный счёт участника: и умолчание при вводе, и то, чем гасят долг переводом."""
+    existing = await accounts_repo.get_personal(session, user.id)
     if existing is not None:
         return existing
 
@@ -163,4 +154,24 @@ async def ensure_personal_account(session: AsyncSession, user: User) -> Account:
         currency=settings.base_currency,
         owner_id=user.id,
         sort=10,
+    )
+
+
+async def ensure_shared_account(session: AsyncSession) -> Account:
+    """Общий счёт — по требованию, а не при первом запуске.
+
+    Идемпотентна: второй общий счёт завести нельзя, иначе «кто кому должен» пришлось бы
+    считать по нескольким кошелькам сразу, а это уже не тот инструмент.
+    """
+    existing = await accounts_repo.get_shared(session)
+    if existing is not None:
+        return existing
+
+    return await accounts_repo.create(
+        session,
+        name=SHARED_ACCOUNT_NAME,
+        kind=AccountKind.CARD,
+        currency=settings.base_currency,
+        is_shared=True,
+        sort=0,
     )

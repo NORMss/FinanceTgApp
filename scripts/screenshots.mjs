@@ -57,6 +57,7 @@ const SHOTS = [
   { name: 'stats', tab: 'Отчёт' },
   { name: 'edit', tab: 'История', prepare: openEditSheet },
   { name: 'categories', tab: 'Ещё', prepare: openCategories },
+  { name: 'category-delete', tab: 'Ещё', prepare: openDeletePanel },
   { name: 'more', tab: 'Ещё' },
 ]
 
@@ -108,6 +109,25 @@ async function openCategories(page) {
   await clickByText(page, '.btn', 'Категории')
   await page.waitForSelector('.icon-btn')
   await wait(400)
+}
+
+/**
+ * Открывает панель удаления категории — но ничего не удаляет.
+ *
+ * Снимок делается на живом демо, и подтверждение стёрло бы половину журнала:
+ * следующий запуск скрипта получил бы уже другие данные.
+ */
+async function openDeletePanel(page) {
+  await openCategories(page)
+  const button = await page.evaluateHandle(() => {
+    const card = [...document.querySelectorAll('.card--tight')].find((item) =>
+      item.textContent.includes('Транспорт'),
+    )
+    return [...card.querySelectorAll('.icon-btn')].find((item) => item.title === 'Удалить')
+  })
+  await button.asElement().click()
+  await page.waitForSelector('.btn--destructive')
+  await wait(500)
 }
 
 async function applyTheme(page, theme) {

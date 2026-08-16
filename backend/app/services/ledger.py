@@ -192,8 +192,16 @@ async def update_transaction(
     account = await accounts_repo.get(session, tx.account_id)
     assert account is not None  # проверено выше либо при создании
 
-    # Доли пересчитываем, когда изменилось хоть что-то, от чего они зависят
-    if not isinstance(splits, UnsetType) or amount_minor is not None or tx_type is not None:
+    # Доли пересчитываем, когда изменилось хоть что-то, от чего они зависят.
+    # Счёт в этом списке обязателен: перенос траты с общего счёта на личный означает,
+    # что делить больше нечего, — а без пересчёта старые доли остаются в базе, и раздел
+    # «кто кому должен» продолжает показывать долг по операции, которая уже личная
+    if (
+        not isinstance(splits, UnsetType)
+        or amount_minor is not None
+        or tx_type is not None
+        or account_id is not None
+    ):
         resolved = await _resolve_splits(
             session,
             account=account,

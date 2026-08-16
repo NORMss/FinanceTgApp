@@ -155,16 +155,11 @@ async def seed(session: AsyncSession, *, months: int = 3, reset: bool = False) -
 
     await bootstrap.ensure_reference_data(session)
     people = await _ensure_people(session)
-    shared = await accounts_repo.get_shared(session)
-    if shared is None:
-        raise DemoError("не найден общий счёт")
+    # Общий счёт приложение само не заводит — а демо показывает именно совместный
+    # бюджет, поэтому здесь он создаётся явно
+    shared = await bootstrap.ensure_shared_account(session)
 
-    personal = {}
-    for user in people:
-        result = await session.execute(
-            select(Account).where(Account.owner_id == user.id, Account.is_shared.is_(False))
-        )
-        personal[user.id] = result.scalars().first()
+    personal = {user.id: await accounts_repo.get_personal(session, user.id) for user in people}
 
     categories = {
         category.name: category

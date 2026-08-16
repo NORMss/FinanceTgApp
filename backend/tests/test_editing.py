@@ -21,9 +21,13 @@ async def test_shared_expense_with_two_people_is_listed(auth_client: httpx.Async
     доли тогда просто не создаются. Баг нашёлся на демо-данных, где участников двое.
     """
     await auth_client.post("/api/auth/login", json={"init_data": build_init_data(TOKEN, USER_B)})
+    shared = (
+        await auth_client.post("/api/accounts", json={"name": "Общий", "is_shared": True})
+    ).json()
 
     created = await auth_client.post(
-        "/api/transactions", json={"type": "expense", "amount": "1000"}
+        "/api/transactions",
+        json={"type": "expense", "amount": "1000", "account_id": shared["id"]},
     )
     assert created.status_code == 201, created.text
     assert len(created.json()["splits"]) == 2
@@ -32,6 +36,53 @@ async def test_shared_expense_with_two_people_is_listed(auth_client: httpx.Async
     assert listing.status_code == 200, listing.text
     splits = listing.json()["items"][0]["splits"]
     assert sorted(item["share_minor"] for item in splits) == [50_000, 50_000]
+
+
+async def test_moving_expense_off_the_shared_account_clears_the_debt(
+    auth_client: httpx.AsyncClient,
+):
+    """Регрессия: правка счёта не пересчитывала доли, и долг оставался навсегда.
+
+    Трата с общего счёта делится пополам и попадает во «Взаиморасчёты». Если потом
+    выясняется, что платили со своей карты, счёт правят в истории — и на этом долг
+    обязан исчезнуть. Раньше доли пересчитывались только при смене суммы или типа,
+    поэтому «кто кому должен» показывал половину суммы уже несуществующей общей траты.
+    """
+    await auth_client.post("/api/auth/login", json={"init_data": build_init_data(TOKEN, USER_B)})
+    shared = (
+        await auth_client.post("/api/accounts", json={"name": "Общий", "is_shared": True})
+    ).json()
+    me = (await auth_client.get("/api/me")).json()
+    mine = next(
+        account
+        for account in (await auth_client.get("/api/accounts")).json()
+        if account["owner_id"] == me["id"] and not account["is_shared"]
+    )
+
+    created = (
+        await auth_client.post(
+            "/api/transactions",
+            json={"type": "expense", "amount": "1000", "account_id": shared["id"]},
+        )
+    ).json()
+    assert len(created["splits"]) == 2
+    assert (await auth_client.get("/api/stats/settle")).json()["users"][0]["net_minor"] != 0
+
+    moved = await auth_client.patch(
+        f"/api/transactions/{created['id']}", json={"account_id": mine["id"]}
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["splits"] == []
+
+    settle = (await auth_client.get("/api/stats/settle")).json()
+    assert [row["net_minor"] for row in settle["users"]] == [0, 0]
+    assert [row["owed_minor"] for row in settle["users"]] == [0, 0]
+
+    # И обратно: вернули на общий счёт — деление восстановилось
+    back = await auth_client.patch(
+        f"/api/transactions/{created['id']}", json={"account_id": shared["id"]}
+    )
+    assert sorted(item["share_minor"] for item in back.json()["splits"]) == [50_000, 50_000]
 
 
 async def test_edits_every_field(auth_client: httpx.AsyncClient):

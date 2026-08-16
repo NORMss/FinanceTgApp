@@ -3,7 +3,9 @@ import type {
   Account,
   Balances,
   Category,
+  CategoryDeleted,
   CategoryKind,
+  CategoryUsage,
   Filters,
   LoginResponse,
   Period,
@@ -87,8 +89,10 @@ function query(params: Record<string, string | number | null | undefined>): stri
 
 export const api = {
   accounts: () => request<Account[]>('/accounts'),
-  categories: (kind?: string) =>
-    request<Category[]>(`/categories${kind ? `?kind=${kind}` : ''}`),
+  categories: (kind?: string, includeArchived = false) =>
+    request<Category[]>(
+      `/categories?${query({ kind, include_archived: includeArchived ? 'true' : '' })}`,
+    ),
   recentCategories: () => request<string[]>('/categories/recent'),
   users: () => request<User[]>('/users'),
 
@@ -114,8 +118,18 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  deleteCategory: (id: string) =>
-    request<{ result: 'deleted' | 'archived' }>(`/categories/${id}`, { method: 'DELETE' }),
+  categoryUsage: (id: string) => request<CategoryUsage>(`/categories/${id}/usage`),
+
+  // moveTo обязателен, когда на категории висят операции: сервер откажет с 409,
+  // а операции без категории испортили бы отчёт за прошлые месяцы
+  deleteCategory: (id: string, moveTo?: string | null) =>
+    request<CategoryDeleted>(
+      `/categories/${id}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ''}`,
+      { method: 'DELETE' },
+    ),
+
+  createAccount: (payload: { name: string; is_shared?: boolean }) =>
+    request<Account>('/accounts', { method: 'POST', body: JSON.stringify(payload) }),
 
   transactions: (period: Period, filters: Filters = {}, limit = 50, offset = 0) =>
     request<TransactionPage>(

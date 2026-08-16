@@ -12,11 +12,17 @@ from app.services import stats as stats_service
 
 
 async def _two_users(session: AsyncSession):
+    """Двое участников, у каждого личный счёт, плюс общий кошелёк.
+
+    Общий счёт приложение само не заводит — им пользуются осознанно, — поэтому
+    здесь он создаётся явно: почти все проверки ниже как раз про деление трат.
+    """
     await bootstrap.ensure_reference_data(session)
     first = await users_repo.upsert_from_telegram(session, TelegramUser(id=111, first_name="Аня"))
     second = await users_repo.upsert_from_telegram(session, TelegramUser(id=222, first_name="Боря"))
     await bootstrap.ensure_personal_account(session, first)
     await bootstrap.ensure_personal_account(session, second)
+    await bootstrap.ensure_shared_account(session)
     await session.flush()
     return first, second
 

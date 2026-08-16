@@ -192,6 +192,24 @@ body {
   width: auto;
 }
 
+/* Кнопка необратимого действия. Красная и заметная: удаление категории переписывает
+   историю, и промахнуться по ней должно быть трудно */
+.btn--destructive {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Второстепенное действие внутри абзаца — выглядит ссылкой, ведёт себя кнопкой */
+.btn--link {
+  width: auto;
+  padding: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 .segmented {
   display: flex;
   background: var(--secondary-bg);

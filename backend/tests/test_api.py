@@ -33,8 +33,11 @@ async def test_login_creates_user_and_defaults(auth_client: httpx.AsyncClient):
     me = await auth_client.get("/api/me")
     assert me.json()["telegram_id"] == USER_A["id"]
 
+    # Новому участнику заводится личный счёт — и только он. Общий счёт не появляется
+    # сам: трата с него делится пополам, и включать это молча нельзя
     accounts = (await auth_client.get("/api/accounts")).json()
-    assert any(account["is_shared"] for account in accounts)
+    assert [account["is_shared"] for account in accounts] == [False]
+    assert accounts[0]["owner_id"] == me.json()["id"]
 
     categories = (await auth_client.get("/api/categories")).json()
     assert any(category["name"] == "Продукты" for category in categories)

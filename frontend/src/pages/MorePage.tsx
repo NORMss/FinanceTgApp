@@ -51,6 +51,19 @@ export default function MorePage({ currentUser, onDone, onOpenCategories }: Prop
     saveReminder.mutate({ time: value, tz: getTimezone() })
   }
 
+  // Общий счёт приложение само не заводит: трата с него делится пополам, и включать
+  // это молча нельзя. Заводится он здесь — одной кнопкой и ровно один
+  const hasShared = (balances.data?.accounts ?? []).some((account) => account.is_shared)
+  const createShared = useMutation({
+    mutationFn: () => api.createAccount({ name: 'Общий счёт', is_shared: true }),
+    onSuccess: () => {
+      notify('success')
+      onDone('Общий счёт заведён')
+      queryClient.invalidateQueries()
+    },
+    onError: (error) => onDone((error as Error).message),
+  })
+
   const push = useMutation({
     mutationFn: api.syncPush,
     onSuccess: (result) => {
@@ -163,8 +176,25 @@ export default function MorePage({ currentUser, onDone, onOpenCategories }: Prop
 
       <p className="section-title">Взаиморасчёты</p>
       <div className="card">
-        <p style={{ margin: '0 0 8px' }}>{settle.data?.hint ?? '…'}</p>
-        {(settle.data?.users ?? []).map((user) => (
+        {balances.data && !hasShared && (
+          <>
+            <p className="hint" style={{ marginTop: 0 }}>
+              Общего счёта нет — каждая трата принадлежит тому, кто её записал, и делить
+              нечего. Общий счёт нужен, когда есть один кошелёк на двоих: трата с него
+              делится поровну, и приложение считает, кто кому должен.
+            </p>
+            <button
+              className="btn btn--ghost"
+              type="button"
+              disabled={createShared.isPending}
+              onClick={() => createShared.mutate()}
+            >
+              {createShared.isPending ? 'Заводим…' : 'Завести общий счёт'}
+            </button>
+          </>
+        )}
+        {hasShared && <p style={{ margin: '0 0 8px' }}>{settle.data?.hint ?? '…'}</p>}
+        {(hasShared ? (settle.data?.users ?? []) : []).map((user) => (
           <div className="row" key={user.user_id}>
             <div className="row__body">
               <div className="row__title">

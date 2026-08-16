@@ -27,6 +27,8 @@ HELP = (
     "<code>500 продукты</code>\n"
     "<code>1 200,50 такси домой</code>\n"
     "<code>+50000 зарплата</code> — со знаком «+» это доход\n\n"
+    "Из чата трата уходит на твой личный счёт. Общая трата, которую надо разделить "
+    "пополам, записывается в приложении — там выбирается общий счёт.\n\n"
     "<b>Команды</b>\n"
     "/month — итоги за текущий месяц\n"
     "/balance — остатки по счетам\n"
@@ -148,10 +150,9 @@ async def quick_add(message: Message, session: AsyncSession, user: User) -> None
         await message.answer(f"{exc}. Формат: <code>500 продукты</code>")
         return
 
-    account = await accounts_repo.get_shared(session)
-    if account is None:
-        accounts = await accounts_repo.list_all(session)
-        account = accounts[0] if accounts else None
+    # Быстрый ввод из чата пишет на личный счёт автора: в чат кидают «300 кофе»,
+    # а не «мы вдвоём скинулись» — общую трату выбирают осознанно в приложении
+    account = await accounts_repo.default_for(session, user.id)
     if account is None:
         await message.answer("Нет ни одного счёта — заведи его в приложении.")
         return

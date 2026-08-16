@@ -48,7 +48,7 @@ async def _person(
 
 
 async def _spend(session: AsyncSession, user: User, moment: datetime) -> None:
-    account = await accounts_repo.get_shared(session)
+    account = await accounts_repo.default_for(session, user.id)
     await ledger.create_transaction(
         session,
         author=user,

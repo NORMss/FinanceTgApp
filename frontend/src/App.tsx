@@ -89,7 +89,7 @@ export default function App() {
 
   return (
     <div className="app">
-      {screen === 'add' && <AddPage onDone={showToast} />}
+      {screen === 'add' && <AddPage currentUserId={me.id} onDone={showToast} />}
       {screen === 'history' && <HistoryPage currentUserId={me.id} onDone={showToast} />}
       {screen === 'stats' && <StatsPage currentUserId={me.id} />}
       {screen === 'more' && (

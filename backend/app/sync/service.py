@@ -215,7 +215,12 @@ async def pull_edits(session: AsyncSession, client: SheetsClient) -> PullResult:
 
     users = await users_repo.list_all(session)
     default_author = next((user for user in users if user.is_active), None)
-    shared = await accounts_repo.get_shared(session)
+    # Строку, дописанную в таблицу руками, кладём на личный счёт того, от чьего имени
+    # она заводится: общий счёт есть не у всех, и раньше при его отсутствии такие
+    # строки просто молча пропускались
+    default_account = (
+        await accounts_repo.default_for(session, default_author.id) if default_author else None
+    )
     result = PullResult()
 
     for values in rows:
@@ -224,7 +229,7 @@ async def pull_edits(session: AsyncSession, client: SheetsClient) -> PullResult:
             continue
 
         if not view.id:
-            if view.amount_minor and default_author and shared:
+            if view.amount_minor and default_author and default_account:
                 kind = (
                     CategoryKind.INCOME
                     if view.tx_type == TransactionType.INCOME
@@ -236,7 +241,7 @@ async def pull_edits(session: AsyncSession, client: SheetsClient) -> PullResult:
                     author=default_author,
                     tx_type=view.tx_type or TransactionType.EXPENSE,
                     amount_minor=view.amount_minor,
-                    account_id=shared.id,
+                    account_id=default_account.id,
                     category_id=category.id if category else None,
                     occurred_at=view.occurred_at,
                     note=view.note,

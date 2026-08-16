@@ -78,6 +78,71 @@ async def usage_count(session: AsyncSession, category_id: str) -> int:
     return int(result.scalar_one())
 
 
+async def usage_counts(session: AsyncSession, category_ids: list[str]) -> int:
+    """Живые операции по нескольким категориям сразу — обычно по всему поддереву."""
+    if not category_ids:
+        return 0
+    query = select(func.count(Transaction.id)).where(
+        Transaction.category_id.in_(category_ids),
+        Transaction.deleted_at.is_(None),
+    )
+    result = await session.execute(query)
+    return int(result.scalar_one())
+
+
+async def rules_count(session: AsyncSession, category_ids: list[str]) -> int:
+    if not category_ids:
+        return 0
+    result = await session.execute(
+        select(func.count(CategoryRule.id)).where(CategoryRule.category_id.in_(category_ids))
+    )
+    return int(result.scalar_one())
+
+
+async def move_transactions(
+    session: AsyncSession, category_ids: list[str], target_id: str
+) -> list[str]:
+    """Переносит операции в другую категорию. Возвращает id живых перенесённых.
+
+    Удалённые операции переносятся тоже, но в ответе их нет: id нужны, чтобы
+    переотправить строки в Google Sheets, а удалённые там и так стоят помеченными.
+    """
+    if not category_ids:
+        return []
+
+    live = await session.execute(
+        select(Transaction.id).where(
+            Transaction.category_id.in_(category_ids), Transaction.deleted_at.is_(None)
+        )
+    )
+    moved = [str(row[0]) for row in live]
+
+    await session.execute(
+        update(Transaction)
+        .where(Transaction.category_id.in_(category_ids))
+        .values(category_id=target_id)
+    )
+    await session.flush()
+    return moved
+
+
+async def move_rules(session: AsyncSession, category_ids: list[str], target_id: str) -> int:
+    """Правила быстрого ввода переезжают вместе с категорией.
+
+    Иначе «500 пятёрочка» после удаления «Пятёрочки» перестанет узнаваться вовсе,
+    хотя траты никуда не делись — они просто теперь в другой категории.
+    """
+    if not category_ids:
+        return 0
+    result = await session.execute(
+        update(CategoryRule)
+        .where(CategoryRule.category_id.in_(category_ids))
+        .values(category_id=target_id)
+    )
+    await session.flush()
+    return int(result.rowcount or 0)
+
+
 async def remove(session: AsyncSession, category: Category) -> None:
     """Физическое удаление. Вызывать только для категории без операций и без детей."""
     await session.execute(sql_delete(CategoryRule).where(CategoryRule.category_id == category.id))

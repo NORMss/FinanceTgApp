@@ -8,14 +8,19 @@
 """
 
 import unicodedata
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Category, CategoryKind
 from app.repositories import categories as categories_repo
+from app.repositories import outbox as outbox_repo
 
 MAX_NAME = 64
 MAX_ICON = 16
+# Имя сущности в очереди синхронизации. Дублировать ledger.ENTITY здесь дешевле,
+# чем тянуть весь модуль журнала ради одной строки и получить круговой импорт
+TX_ENTITY = "transaction"
 ZWJ = "\u200d"  # U+200D, невидим в редакторе — поэтому кодом, а не символом
 
 
@@ -163,25 +168,91 @@ async def update_category(
     return category
 
 
-async def delete_category(session: AsyncSession, category: Category) -> str:
-    """Удаляет категорию, если она никому не нужна, иначе прячет.
+@dataclass(frozen=True, slots=True)
+class Usage:
+    """Что зацепит удаление категории. Показывается человеку до того, как он нажмёт «Удалить»."""
 
-    Возвращает «deleted» или «archived» — вызывающему нужно сказать пользователю,
-    что именно произошло. Удалять категорию с операциями нельзя: журнал за прошлые
-    месяцы потерял бы разбивку, а восстановить её потом неоткуда.
-    """
+    transactions: int  # живых операций во всём поддереве
+    children: int
+    rules: int
+
+    @property
+    def needs_replacement(self) -> bool:
+        return self.transactions > 0
+
+
+class ReplacementRequired(CatalogError):
+    """Категорию нельзя удалить молча: на ней висят операции, им нужна новая категория."""
+
+
+async def subtree_ids(session: AsyncSession, category: Category) -> list[str]:
+    """Сама категория и её подкатегории. Дерево двухуровневое, поэтому рекурсии нет."""
     children = await categories_repo.list_children(session, category.id)
-    used = await categories_repo.usage_count(session, category.id)
+    return [category.id, *(child.id for child in children)]
 
-    if used or children:
-        category.archived = True
-        for child in children:
-            child.archived = True
-        await session.flush()
-        return "archived"
 
+async def usage(session: AsyncSession, category: Category) -> Usage:
+    ids = await subtree_ids(session, category)
+    return Usage(
+        transactions=await categories_repo.usage_counts(session, ids),
+        children=len(ids) - 1,
+        rules=await categories_repo.rules_count(session, ids),
+    )
+
+
+async def _resolve_replacement(
+    session: AsyncSession, category: Category, subtree: list[str], move_to: str
+) -> Category:
+    target = await categories_repo.get(session, move_to)
+    if target is None:
+        raise CatalogError("категория для переноса не найдена")
+    if target.id in subtree:
+        raise CatalogError("нельзя перенести операции внутрь удаляемой категории")
+    if target.kind != category.kind:
+        raise CatalogError("перенести можно только в категорию того же типа")
+    if target.archived:
+        raise CatalogError("категория для переноса скрыта — сначала верните её в списки")
+    return target
+
+
+async def delete_category(
+    session: AsyncSession, category: Category, *, move_to: str | None = None
+) -> dict:
+    """Удаляет категорию вместе с подкатегориями, предварительно перенеся операции.
+
+    Удаление здесь настоящее, а не «спрятать»: скрытие никуда не делось, но это
+    отдельное действие (`archived`), и путать их нельзя. Зато операция не может
+    остаться без категории — если на поддереве что-то висит, вызывающий обязан
+    сказать, куда это переносить. Молча обнулять `category_id` нельзя: отчёт за
+    прошлые месяцы перестал бы сходиться с тем, что человек помнит.
+
+    Переносятся и удалённые операции: они лежат в журнале и в таблице, и остаться
+    со ссылкой на несуществующую категорию не должны.
+    """
+    subtree = await subtree_ids(session, category)
+    used = await categories_repo.usage_counts(session, subtree)
+
+    if used and not move_to:
+        raise ReplacementRequired(
+            f"на категории и её подкатегориях {used} операций — "
+            "выберите, в какую категорию их перенести"
+        )
+
+    moved: list[str] = []
+    if move_to:
+        target = await _resolve_replacement(session, category, subtree, move_to)
+        moved = await categories_repo.move_transactions(session, subtree, target.id)
+        await categories_repo.move_rules(session, subtree, target.id)
+        # Каждая перенесённая строка меняет колонку «Категория» в таблице — без этого
+        # Google Sheets останется с прежними названиями до следующей полной перезаливки
+        for tx_id in moved:
+            await outbox_repo.enqueue(session, entity=TX_ENTITY, entity_id=tx_id)
+
+    for child in await categories_repo.list_children(session, category.id):
+        await categories_repo.remove(session, child)
     await categories_repo.remove(session, category)
-    return "deleted"
+
+    return {"result": "deleted", "moved": len(moved), "removed": len(subtree)}
 
 
 async def expand_ids(session: AsyncSession, category_ids: list[str]) -> list[str]:

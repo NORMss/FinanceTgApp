@@ -63,11 +63,12 @@ async def create_transaction(
 ) -> TransactionOut:
     account_id = payload.account_id
     if not account_id:
-        # По умолчанию пишем в общий счёт: это самый частый случай в семейном учёте
-        shared = await accounts_repo.get_shared(session)
-        if shared is None:
+        # Умолчание — свой личный счёт. Общий выбирают руками: трата с него делится
+        # пополам, и делать это молча за человека нельзя
+        default = await accounts_repo.default_for(session, user.id)
+        if default is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "не указан счёт")
-        account_id = shared.id
+        account_id = default.id
 
     account = await accounts_repo.get(session, account_id)
     if account is None:

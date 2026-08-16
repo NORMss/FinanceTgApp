@@ -36,6 +36,21 @@ export interface Category {
   sort: number
 }
 
+/** Во что обойдётся удаление категории — спрашивается до того, как показать кнопку. */
+export interface CategoryUsage {
+  transactions: number
+  children: number
+  rules: number
+  /** true — операции придётся перенести в другую категорию, иначе сервер откажет. */
+  needs_replacement: boolean
+}
+
+export interface CategoryDeleted {
+  result: 'deleted'
+  moved: number
+  removed: number
+}
+
 export interface Transaction {
   id: string
   occurred_at: string

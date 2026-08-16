@@ -95,9 +95,21 @@ class CategoryUpdate(BaseModel):
     archived: bool | None = None
 
 
+class CategoryUsageOut(BaseModel):
+    """Во что обойдётся удаление — спрашивается до удаления, показывается человеку."""
+
+    transactions: int
+    children: int
+    rules: int
+    # true — операции придётся куда-то перенести, без замены удалить не дадим
+    needs_replacement: bool
+
+
 class CategoryDeleteOut(BaseModel):
-    # deleted — стёрли насовсем, archived — спрятали, потому что на неё ссылаются операции
-    result: Literal["deleted", "archived"]
+    result: Literal["deleted"]
+    # сколько операций переехало в категорию-замену и сколько категорий стёрто
+    moved: int = 0
+    removed: int = 1
 
 
 # --- операции ---

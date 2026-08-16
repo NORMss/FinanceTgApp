@@ -8,6 +8,7 @@ import { haptic, notify } from '../telegram'
 import type { TransactionType } from '../types'
 
 interface Props {
+  currentUserId: string
   onDone: (message: string) => void
 }
 
@@ -16,7 +17,7 @@ interface Props {
  * Категории отсортированы так, что последние использованные стоят первыми — на практике
  * именно они закрывают почти весь ежедневный ввод.
  */
-export default function AddPage({ onDone }: Props) {
+export default function AddPage({ currentUserId, onDone }: Props) {
   const queryClient = useQueryClient()
   const [type, setType] = useState<TransactionType>('expense')
   const [amount, setAmount] = useState('')
@@ -53,6 +54,13 @@ export default function AddPage({ onDone }: Props) {
 
   const canSubmit = isValidAmount(amount) && !create.isPending
   const visibleAccounts = accounts.data ?? []
+  // Свой счёт — умолчание. Общий выбирают руками: трата с него делится пополам
+  // и превращается в долг второго участника, а это должно быть решением, а не побочным
+  // эффектом того, что общий счёт оказался первым в списке
+  const myAccount = visibleAccounts.find(
+    (account) => !account.is_shared && account.owner_id === currentUserId,
+  )
+  const selected = visibleAccounts.find((account) => account.id === accountId)
 
   return (
     <div className="page">
@@ -109,18 +117,31 @@ export default function AddPage({ onDone }: Props) {
       />
 
       {visibleAccounts.length > 1 && (
-        <select
-          className="field"
-          value={accountId ?? ''}
-          onChange={(event) => setAccountId(event.target.value || null)}
-        >
-          <option value="">Общий счёт (по умолчанию)</option>
-          {visibleAccounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.is_shared ? '👥' : '👤'} {account.name}
+        <>
+          <select
+            className="field"
+            value={accountId ?? ''}
+            onChange={(event) => setAccountId(event.target.value || null)}
+            aria-label="Счёт"
+          >
+            <option value="">
+              👤 {myAccount ? `${myAccount.name} (по умолчанию)` : 'Свой счёт (по умолчанию)'}
             </option>
-          ))}
-        </select>
+            {visibleAccounts
+              .filter((account) => account.id !== myAccount?.id)
+              .map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.is_shared ? '👥' : '👤'} {account.name}
+                </option>
+              ))}
+          </select>
+          {selected?.is_shared && (
+            <p className="hint" style={{ marginTop: 0 }}>
+              Трата с общего счёта делится поровну — второй участник окажется должен вам
+              половину.
+            </p>
+          )}
+        </>
       )}
 
       {create.isError && <p className="error">{(create.error as Error).message}</p>}
