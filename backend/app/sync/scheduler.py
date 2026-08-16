@@ -1,7 +1,8 @@
 """Фоновые задания синхронизации.
 
-APScheduler внутри того же процесса: для двух пользователей отдельный воркер, брокер
-и Celery — это три лишних контейнера ради одной периодической функции.
+Сами задания живут здесь, а планировщик — общий на всё приложение (app.scheduler):
+кроме синхронизации в нём крутятся напоминания, и заводить второй AsyncIOScheduler
+ради этого незачем.
 """
 
 import logging
@@ -15,8 +16,6 @@ from app.sync.client import SheetsClient
 from app.sync.service import full_resync, pull_edits, push_pending
 
 log = logging.getLogger(__name__)
-
-_scheduler: AsyncIOScheduler | None = None
 
 
 async def _run_push() -> None:
@@ -57,13 +56,12 @@ async def _run_cleanup() -> None:
             log.exception("ошибка очистки очереди")
 
 
-def start_scheduler() -> AsyncIOScheduler | None:
-    global _scheduler
+def register_jobs(scheduler: AsyncIOScheduler) -> bool:
+    """Вешает задания синхронизации на общий планировщик. False — если Sheets не настроены."""
     if not settings.sheets_ready:
         log.info("синхронизация с Google Sheets выключена или не настроена")
-        return None
+        return False
 
-    scheduler = AsyncIOScheduler(timezone="UTC")
     interval = max(15, settings.sheets_sync_interval)
     scheduler.add_job(_run_push, "interval", seconds=interval, id="sheets_push", max_instances=1)
     scheduler.add_job(
@@ -74,17 +72,8 @@ def start_scheduler() -> AsyncIOScheduler | None:
         max_instances=1,
     )
     scheduler.add_job(_run_cleanup, "interval", hours=24, id="outbox_cleanup", max_instances=1)
-    scheduler.start()
-    _scheduler = scheduler
-    log.info("планировщик синхронизации запущен, интервал %sс", interval)
-    return scheduler
-
-
-def stop_scheduler() -> None:
-    global _scheduler
-    if _scheduler is not None:
-        _scheduler.shutdown(wait=False)
-        _scheduler = None
+    log.info("синхронизация с Google Sheets: интервал %sс", interval)
+    return True
 
 
 async def resync_now() -> dict:

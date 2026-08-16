@@ -69,3 +69,18 @@ export function notify(type: 'error' | 'success' | 'warning'): void {
 export function getInitData(): string {
   return webApp?.initData ?? ''
 }
+
+/**
+ * Часовой пояс устройства — «Europe/Moscow», а не смещение в минутах.
+ *
+ * Нужен напоминаниям: сервер должен знать, когда у человека наступит его девять вечера.
+ * Именно имя зоны, потому что смещение поедет при переходе на летнее время, а Telegram
+ * пояс не сообщает вовсе — только браузер.
+ */
+export function getTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? ''
+  } catch {
+    return ''
+  }
+}

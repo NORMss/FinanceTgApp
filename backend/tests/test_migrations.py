@@ -60,6 +60,31 @@ def seeded_db(tmp_path: Path) -> Path:
     return db_path
 
 
+def test_existing_users_get_reminder_defaults(seeded_db: Path):
+    """Колонки напоминаний NOT NULL, а строки в users уже есть.
+
+    Без server_default такая миграция падает прямо на боевой базе, где пользователи
+    завелись с первого дня, — и заметить это на пустой базе невозможно.
+    """
+    with sqlite3.connect(seeded_db) as connection:
+        connection.execute(
+            "INSERT INTO users (id, telegram_id, display_name, is_active,"
+            " created_at, updated_at) VALUES ('01USER', 111, 'Аня', 1,"
+            " '2026-08-01 00:00:00', '2026-08-01 00:00:00')"
+        )
+        connection.commit()
+
+    _alembic(["upgrade", "head"], seeded_db)
+
+    with sqlite3.connect(seeded_db) as connection:
+        row = connection.execute(
+            "SELECT reminder_enabled, reminder_time, reminder_tz, reminder_last_sent_on"
+            " FROM users WHERE id = '01USER'"
+        ).fetchone()
+
+    assert row == (1, "21:00", "", None)
+
+
 def test_upgrade_keeps_subcategories(seeded_db: Path):
     _alembic(["upgrade", "head"], seeded_db)
 

@@ -1,4 +1,4 @@
-import { getInitData } from './telegram'
+import { getInitData, getTimezone } from './telegram'
 import type {
   Account,
   Balances,
@@ -7,6 +7,7 @@ import type {
   Filters,
   LoginResponse,
   Period,
+  Reminder,
   Settlement,
   Summary,
   SyncStatus,
@@ -65,7 +66,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export async function login(): Promise<LoginResponse> {
   const result = await request<LoginResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ init_data: getInitData() }),
+    // Пояс отправляем при каждом входе: человек переехал или улетел — напоминание
+    // должно ехать за ним, а не остаться в поясе первого запуска
+    body: JSON.stringify({ init_data: getInitData(), tz: getTimezone() }),
   })
   token = result.token
   return result
@@ -171,6 +174,10 @@ export const api = {
     ),
   balances: () => request<Balances>('/stats/balances'),
   settle: () => request<Settlement>('/stats/settle'),
+
+  reminder: () => request<Reminder>('/me/reminder'),
+  saveReminder: (payload: { enabled?: boolean; time?: string; tz?: string }) =>
+    request<Reminder>('/me/reminder', { method: 'PUT', body: JSON.stringify(payload) }),
 
   syncStatus: () => request<SyncStatus>('/sync/status'),
   syncPush: () => request<{ updated: number; appended: number }>('/sync/push', { method: 'POST' }),

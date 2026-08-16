@@ -9,7 +9,7 @@ from app.models import User
 from app.repositories import users as users_repo
 from app.security.initdata import InitDataError, TelegramUser, validate_init_data
 from app.security.tokens import issue_token
-from app.services import bootstrap
+from app.services import bootstrap, reminders
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ async def register_user(session: AsyncSession, tg_user: TelegramUser) -> User:
     return user
 
 
-async def login(session: AsyncSession, init_data: str) -> tuple[User, str, int]:
+async def login(session: AsyncSession, init_data: str, tz: str = "") -> tuple[User, str, int]:
     try:
         tg_user = validate_init_data(
             init_data, settings.bot_token, settings.init_data_max_age_seconds
@@ -42,11 +42,15 @@ async def login(session: AsyncSession, init_data: str) -> tuple[User, str, int]:
         raise
 
     user = await register_user(session, tg_user)
+    # Пояс приезжает с каждым входом: человек мог переехать или улететь, а напоминание
+    # должно приходить в его девять вечера, а не в те, что были при первом запуске
+    if tz and reminders.remember_timezone(user, tz):
+        log.info("часовой пояс %s: %s", user.id, user.reminder_tz)
     token, expires_at = issue_token(user.id, user.telegram_id)
     return user, token, expires_at
 
 
-async def dev_login(session: AsyncSession) -> tuple[User, str, int]:
+async def dev_login(session: AsyncSession, tz: str = "") -> tuple[User, str, int]:
     """Локальная разработка и демо без Telegram. Включается только DEV_AUTH_BYPASS=true."""
     if not settings.dev_auth_bypass:
         raise AccessDenied("dev-вход выключен")
@@ -62,6 +66,8 @@ async def dev_login(session: AsyncSession) -> tuple[User, str, int]:
             session, TelegramUser(id=telegram_id, first_name="Dev")
         )
 
+    if tz:
+        reminders.remember_timezone(user, tz)
     await bootstrap.ensure_personal_account(session, user)
     token, expires_at = issue_token(user.id, user.telegram_id)
     return user, token, expires_at

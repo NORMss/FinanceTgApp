@@ -112,6 +112,15 @@ export interface Settlement {
   hint: string
 }
 
+export interface Reminder {
+  enabled: boolean
+  /** «21:00» — в этом же виде значение уходит в <input type="time">. */
+  time: string
+  tz: string
+  /** false, когда бот выключен: настройка есть, но присылать напоминание некому. */
+  delivery_ready: boolean
+}
+
 export interface SyncStatus {
   enabled: boolean
   configured: boolean

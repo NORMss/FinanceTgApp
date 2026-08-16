@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 
 import { api } from '../api'
 import ErrorNote from '../components/ErrorNote'
 import { formatMoney } from '../format'
-import { notify } from '../telegram'
+import { getTimezone, notify } from '../telegram'
 import type { User } from '../types'
+
+const TIME_PATTERN = /^\d{2}:\d{2}$/
 
 interface Props {
   currentUser: User
@@ -17,6 +20,36 @@ export default function MorePage({ currentUser, onDone, onOpenCategories }: Prop
   const balances = useQuery({ queryKey: ['balances'], queryFn: api.balances })
   const settle = useQuery({ queryKey: ['settle'], queryFn: api.settle })
   const sync = useQuery({ queryKey: ['sync-status'], queryFn: api.syncStatus })
+
+  const reminder = useQuery({ queryKey: ['reminder'], queryFn: api.reminder })
+
+  // Поле времени редактируется локально: пока человек крутит часы в системном
+  // выборе, промежуточные значения на сервер отправлять незачем
+  const [time, setTime] = useState('')
+  useEffect(() => {
+    if (reminder.data) setTime(reminder.data.time)
+  }, [reminder.data])
+
+  const saveReminder = useMutation({
+    mutationFn: api.saveReminder,
+    onSuccess: (result) => {
+      notify('success')
+      queryClient.setQueryData(['reminder'], result)
+      onDone(
+        result.enabled ? `Напомню в ${result.time}` : 'Напоминания выключены',
+      )
+    },
+    onError: (error) => {
+      notify('error')
+      onDone((error as Error).message)
+    },
+  })
+
+  /** Отправляем время, только когда оно дособрано и отличается от сохранённого. */
+  const commitTime = (value: string) => {
+    if (!TIME_PATTERN.test(value) || value === reminder.data?.time) return
+    saveReminder.mutate({ time: value, tz: getTimezone() })
+  }
 
   const push = useMutation({
     mutationFn: api.syncPush,
@@ -40,11 +73,62 @@ export default function MorePage({ currentUser, onDone, onOpenCategories }: Prop
 
   return (
     <div className="page">
-      <ErrorNote error={balances.error ?? settle.error ?? sync.error} />
+      <ErrorNote error={balances.error ?? settle.error ?? sync.error ?? reminder.error} />
 
       <button className="btn btn--ghost" type="button" onClick={onOpenCategories}>
         🗂 Категории и подкатегории
       </button>
+
+      <p className="section-title">Напоминание</p>
+      <div className="card card--tight">
+        <div className="row">
+          <div className="row__icon">🔔</div>
+          <div className="row__body">
+            <div className="row__title">Напоминать о тратах</div>
+            <div className="row__sub">
+              Бот напишет вечером, если за день ничего не записано
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={reminder.data?.enabled ?? false}
+              disabled={!reminder.data || saveReminder.isPending}
+              onChange={(event) =>
+                saveReminder.mutate({ enabled: event.target.checked, tz: getTimezone() })
+              }
+              aria-label="Напоминать о тратах"
+            />
+            <span />
+          </label>
+        </div>
+
+        {reminder.data?.enabled && (
+          <div className="row">
+            <div className="row__body">
+              <div className="row__title">Время</div>
+              <div className="row__sub">по вашему поясу · {reminder.data.tz}</div>
+            </div>
+            <input
+              className="field field--time"
+              type="time"
+              value={time}
+              onChange={(event) => {
+                setTime(event.target.value)
+                commitTime(event.target.value)
+              }}
+              onBlur={() => commitTime(time)}
+              aria-label="Время напоминания"
+            />
+          </div>
+        )}
+      </div>
+      {reminder.data && !reminder.data.delivery_ready && (
+        <p className="hint">
+          Бот сейчас выключен, поэтому напоминания не приходят. Настройка сохранится
+          и заработает, как только он запустится.
+        </p>
+      )}
 
       <p className="section-title">Остатки</p>
       <div className="card card--tight">

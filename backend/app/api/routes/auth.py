@@ -46,10 +46,12 @@ async def login(payload: LoginRequest, request: Request, session: SessionDep) ->
 
     try:
         if payload.init_data:
-            user, token, expires_at = await auth_service.login(session, payload.init_data)
+            user, token, expires_at = await auth_service.login(
+                session, payload.init_data, payload.tz
+            )
         else:
             # Пустая initData допустима только в dev-режиме — иначе это попытка зайти мимо Telegram
-            user, token, expires_at = await auth_service.dev_login(session)
+            user, token, expires_at = await auth_service.dev_login(session, payload.tz)
     except InitDataError as exc:
         raise _fail(request, str(exc), status.HTTP_401_UNAUTHORIZED) from exc
     except auth_service.AccessDenied as exc:

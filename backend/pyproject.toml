@@ -16,6 +16,9 @@ dependencies = [
     "apscheduler>=3.10",
     "google-api-python-client>=2.150",
     "google-auth>=2.36",
+    # База часовых поясов для zoneinfo: в slim-образе системной может не быть,
+    # и напоминания молча уехали бы на UTC
+    "tzdata>=2024.2",
 ]
 
 [project.optional-dependencies]

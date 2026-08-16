@@ -16,8 +16,8 @@ from app.bot.setup import create_bot, create_dispatcher, setup_webhook, start_po
 from app.config import settings
 from app.db import dispose_engine, get_session_factory
 from app.logging_setup import configure_logging
+from app.scheduler import start_scheduler, stop_scheduler
 from app.services import bootstrap
-from app.sync.scheduler import start_scheduler, stop_scheduler
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +59,8 @@ async def lifespan(app: FastAPI):
         app.state.dispatcher = None
         log.warning("бот выключен: не задан BOT_TOKEN или BOT_MODE=off")
 
-    start_scheduler()
+    # Напоминания шлёт бот, поэтому планировщик получает его же экземпляр
+    start_scheduler(app.state.bot)
 
     try:
         yield

@@ -23,6 +23,9 @@ class ORMModel(BaseModel):
 
 class LoginRequest(BaseModel):
     init_data: str = ""
+    # Часовой пояс браузера (IANA, «Europe/Moscow»). Нужен напоминаниям: без него
+    # «в 21:00» считалось бы по поясу сервера. Необязателен — бот работает и без Mini App.
+    tz: str = Field(default="", max_length=64)
 
 
 class UserOut(ORMModel):
@@ -225,6 +228,25 @@ class UserBalanceOut(BaseModel):
 class SettleOut(BaseModel):
     users: list[UserBalanceOut]
     hint: str
+
+
+# --- напоминания ---
+
+
+class ReminderOut(BaseModel):
+    enabled: bool
+    # «21:00» — ровно то, что понимает <input type="time">
+    time: str
+    tz: str
+    # Работает ли доставка вообще: без бота настройка ни на что не влияет,
+    # и честнее сказать об этом на экране, чем молча не присылать
+    delivery_ready: bool
+
+
+class ReminderUpdate(BaseModel):
+    enabled: bool | None = None
+    time: str | None = Field(default=None, max_length=5)
+    tz: str | None = Field(default=None, max_length=64)
 
 
 class SyncStatusOut(BaseModel):
