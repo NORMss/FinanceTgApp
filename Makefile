@@ -82,6 +82,12 @@ up-shared: check-proxy-net ## Поднять приложение в сети ч
 check-sheets: ## Проверить доступ к Google Sheets (в запущенном контейнере)
 	docker compose exec -T app python -m app.sync.check
 
+check-settle: ## Показать, из каких операций сложился долг во «Взаиморасчётах»
+	docker compose exec -T app python -m app.repair
+
+fix-settle: ## Пересчитать доли у операций, помеченных как проблемные
+	docker compose exec -T app python -m app.repair --apply
+
 check-proxy-net: ## Проверить, что сеть из PROXY_NETWORK существует
 	@net=$$(grep -E '^PROXY_NETWORK=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\''' | tr -d '\r'); \
 	if [ -z "$$net" ]; then \
@@ -100,4 +106,4 @@ down: ## Остановить docker
 logs: ## Логи приложения
 	docker compose logs -f app
 
-.PHONY: help setup migrate revision api web test lint build demo demo-build demo-docker data up up-proxy up-shared check-sheets check-proxy-net down logs
+.PHONY: help setup migrate revision api web test lint build demo demo-build demo-docker data up up-proxy up-shared check-sheets check-settle fix-settle check-proxy-net down logs
