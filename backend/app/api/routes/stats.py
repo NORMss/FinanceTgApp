@@ -28,16 +28,22 @@ async def summary(
     session: SessionDep,
     _: CurrentUser,
     bounds: PeriodDep,
+    person_ids: Annotated[list[str] | None, Query()] = None,
     author_ids: Annotated[list[str] | None, Query()] = None,
     category_ids: Annotated[list[str] | None, Query()] = None,
     account_ids: Annotated[list[str] | None, Query()] = None,
 ) -> SummaryOut:
     """Итоги за период. Фильтры те же, что у списка операций, — иначе отчёт
-    показывал бы одно, а история по тем же условиям другое."""
+    показывал бы одно, а история по тем же условиям другое.
+
+    person_ids — «чьи это траты», author_ids — «кто их записал». Совпадают они не всегда:
+    трату за другого записывает кто-то один, а принадлежит она тому, за кого записана.
+    """
     start, end = bounds
     flt = TxFilter(
         start=start,
         end=end,
+        person_ids=person_ids or [],
         author_ids=author_ids or [],
         category_ids=await catalog_service.expand_ids(session, category_ids or []),
         account_ids=account_ids or [],
@@ -51,7 +57,7 @@ async def summary(
         net_minor=data["net_minor"],
         count=data["count"],
         by_category=[asdict(item) for item in data["by_category"]],
-        by_author=data["by_author"],
+        by_person=data["by_person"],
     )
 
 

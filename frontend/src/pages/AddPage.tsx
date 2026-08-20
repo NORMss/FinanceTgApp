@@ -29,6 +29,7 @@ export default function AddPage({ currentUserId, onDone }: Props) {
   const categories = useQuery({ queryKey: ['categories', kind], queryFn: () => api.categories(kind) })
   const recent = useQuery({ queryKey: ['recent-categories'], queryFn: api.recentCategories })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
+  const users = useQuery({ queryKey: ['users'], queryFn: api.users })
 
   const create = useMutation({
     mutationFn: () =>
@@ -61,6 +62,12 @@ export default function AddPage({ currentUserId, onDone }: Props) {
     (account) => !account.is_shared && account.owner_id === currentUserId,
   )
   const selected = visibleAccounts.find((account) => account.id === accountId)
+  // Выбран чужой личный счёт — значит, запись делается за другого человека. Стоит сказать
+  // об этом прямо: в историю и отчёт трата попадёт к нему, а не к тому, кто её вносит
+  const forSomeoneElse =
+    selected && !selected.is_shared && selected.owner_id && selected.owner_id !== currentUserId
+      ? users.data?.find((user) => user.id === selected.owner_id)
+      : undefined
 
   return (
     <div className="page">
@@ -139,6 +146,12 @@ export default function AddPage({ currentUserId, onDone }: Props) {
             <p className="hint" style={{ marginTop: 0 }}>
               Трата с общего счёта делится поровну — второй участник окажется должен вам
               половину.
+            </p>
+          )}
+          {forSomeoneElse && (
+            <p className="hint" style={{ marginTop: 0 }}>
+              Трата будет числиться за {forSomeoneElse.display_name}, а не за вами —
+              и в истории, и в отчёте.
             </p>
           )}
         </>

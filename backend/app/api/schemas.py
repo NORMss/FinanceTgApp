@@ -199,7 +199,10 @@ class CategoryTotalOut(BaseModel):
     own_minor: int = 0
 
 
-class AuthorTotalOut(BaseModel):
+class PersonTotalOut(BaseModel):
+    """Сколько потрачено за человека: по его личным счетам плюс то, что он записал
+    с общего. Не «сколько он ввёл в приложение» — трату за другого вводит кто-то один."""
+
     user_id: str
     name: str
     amount_minor: int
@@ -213,7 +216,7 @@ class SummaryOut(BaseModel):
     net_minor: int
     count: int
     by_category: list[CategoryTotalOut]
-    by_author: list[AuthorTotalOut]
+    by_person: list[PersonTotalOut]
 
 
 class AccountBalanceOut(BaseModel):

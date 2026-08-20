@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Transaction, TransactionType, TxSplit
+from app.models import Account, Transaction, TransactionType, TxSplit
 from app.util.dates import now
 
 
@@ -18,9 +18,32 @@ class TxFilter:
     types: list[TransactionType] = field(default_factory=list)
     category_ids: list[str] = field(default_factory=list)
     account_ids: list[str] = field(default_factory=list)
+    # «Кто записал» — про действие ввода, а не про деньги. Нужен там, где важен сам
+    # факт записи: вечернее напоминание идёт тому, кто за день ничего не внёс
     author_ids: list[str] = field(default_factory=list)
+    # «Чья трата» — про деньги. Именно это спрашивают история и отчёт
+    person_ids: list[str] = field(default_factory=list)
     search: str | None = None
     include_deleted: bool = False
+
+
+def person_id() -> ColumnElement[str]:
+    """Чья это операция: владелец счёта, а если владельца нет — тот, кто её записал.
+
+    Записать за другого — значит выбрать его личный счёт: «Аня купила Боре лекарства»
+    в журнале выглядит как трата со счёта «Личный · Боря», автор при этом Аня. Считать
+    такую операцию Аниной неверно: деньги ушли за Борю, и в его истории она должна быть.
+
+    Владельца нет у общего счёта — там трата и правда общая, и относится она к тому,
+    кто её записал: ровно так же её считают «Взаиморасчёты».
+    """
+    owner = (
+        select(Account.owner_id)
+        .where(Account.id == Transaction.account_id)
+        .correlate(Transaction)
+        .scalar_subquery()
+    )
+    return func.coalesce(owner, Transaction.author_id)
 
 
 def _apply(query: Select, flt: TxFilter) -> Select:
@@ -38,6 +61,8 @@ def _apply(query: Select, flt: TxFilter) -> Select:
         query = query.where(Transaction.account_id.in_(flt.account_ids))
     if flt.author_ids:
         query = query.where(Transaction.author_id.in_(flt.author_ids))
+    if flt.person_ids:
+        query = query.where(person_id().in_(flt.person_ids))
     if flt.search:
         query = query.where(Transaction.note.ilike(f"%{flt.search.strip()}%"))
     return query
@@ -87,10 +112,10 @@ async def totals_by_category(
     return sorted(rows, key=lambda item: item[1], reverse=True)
 
 
-async def totals_by_author(session: AsyncSession, flt: TxFilter) -> dict[str, int]:
-    query = _apply(
-        select(Transaction.author_id, func.sum(Transaction.amount_minor)), flt
-    ).group_by(Transaction.author_id)
+async def totals_by_person(session: AsyncSession, flt: TxFilter) -> dict[str, int]:
+    """Сколько потрачено за каждого. Разбивка та же, что и у фильтра списка."""
+    person = person_id()
+    query = _apply(select(person, func.sum(Transaction.amount_minor)), flt).group_by(person)
     result = await session.execute(query)
     return {str(row[0]): int(row[1] or 0) for row in result}
 

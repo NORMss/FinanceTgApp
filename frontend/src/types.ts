@@ -88,7 +88,8 @@ export interface CategoryTotal {
 
 /** Фильтры истории и отчёта. Пустые поля в запрос не уходят. */
 export interface Filters {
-  authorId?: string | null
+  /** Чья это трата: владелец счёта, а у общего счёта — тот, кто записал. */
+  personId?: string | null
   categoryId?: string | null
   type?: TransactionType | null
   search?: string
@@ -102,7 +103,7 @@ export interface Summary {
   net_minor: number
   count: number
   by_category: CategoryTotal[]
-  by_author: { user_id: string; name: string; amount_minor: number }[]
+  by_person: { user_id: string; name: string; amount_minor: number }[]
 }
 
 export interface Balances {
