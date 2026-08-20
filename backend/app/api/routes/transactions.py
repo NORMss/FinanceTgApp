@@ -32,6 +32,9 @@ async def list_transactions(
     types: Annotated[list[TransactionType] | None, Query()] = None,
     category_ids: Annotated[list[str] | None, Query()] = None,
     account_ids: Annotated[list[str] | None, Query()] = None,
+    # «Чьи траты» и «кто их записал» — разные вопросы: запись за другого делается
+    # с его личного счёта, и в истории она должна найтись у него, а не у автора
+    person_ids: Annotated[list[str] | None, Query()] = None,
     author_ids: Annotated[list[str] | None, Query()] = None,
     search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
@@ -45,6 +48,7 @@ async def list_transactions(
         # Выбранная категория тянет за собой подкатегории: «Продукты» — это и «Пятёрочка»
         category_ids=await catalog_service.expand_ids(session, category_ids or []),
         account_ids=account_ids or [],
+        person_ids=person_ids or [],
         author_ids=author_ids or [],
         search=search,
     )

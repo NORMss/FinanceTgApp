@@ -14,32 +14,33 @@ interface Props {
 
 export default function StatsPage({ currentUserId }: Props) {
   const [period, setPeriod] = useState<Period>('month')
-  const [authorId, setAuthorId] = useState<string | null>(null)
+  const [personId, setPersonId] = useState<string | null>(null)
 
   const users = useQuery({ queryKey: ['users'], queryFn: api.users })
   const summary = useQuery({
-    queryKey: ['summary', period, authorId],
-    queryFn: () => api.summary(period, { authorId }),
+    queryKey: ['summary', period, personId],
+    queryFn: () => api.summary(period, { personId }),
   })
 
   const data = summary.data
-  const selectAuthor = (id: string | null) => {
+  const selectPerson = (id: string | null) => {
     haptic()
-    setAuthorId(id)
+    setPersonId(id)
   }
 
   return (
     <div className="page">
       <PeriodPicker value={period} onChange={setPeriod} />
 
-      {/* Отчёт по одному человеку: те же цифры, но только по его записям */}
+      {/* Отчёт по одному человеку: те же цифры, но только по его тратам. Его —
+          значит записанным на его счёт, кто бы их ни вносил */}
       {(users.data?.length ?? 0) > 1 && (
         <div className="chips">
           <button
             type="button"
             className="chip"
-            data-active={!authorId}
-            onClick={() => selectAuthor(null)}
+            data-active={!personId}
+            onClick={() => selectPerson(null)}
           >
             Вместе
           </button>
@@ -48,8 +49,8 @@ export default function StatsPage({ currentUserId }: Props) {
               key={user.id}
               type="button"
               className="chip"
-              data-active={authorId === user.id}
-              onClick={() => selectAuthor(authorId === user.id ? null : user.id)}
+              data-active={personId === user.id}
+              onClick={() => selectPerson(personId === user.id ? null : user.id)}
             >
               {user.id === currentUserId ? 'Я' : user.display_name}
             </button>
@@ -109,11 +110,11 @@ export default function StatsPage({ currentUserId }: Props) {
         </>
       )}
 
-      {data && !authorId && data.by_author.length > 1 && (
+      {data && !personId && data.by_person.length > 1 && (
         <>
-          <p className="section-title">Кто сколько записал</p>
+          <p className="section-title">Кто сколько потратил</p>
           <div className="card card--tight">
-            {data.by_author.map((item) => (
+            {data.by_person.map((item) => (
               <div className="row row--tappable" key={item.user_id}>
                 <div className="row__icon">👤</div>
                 <div className="row__body">
@@ -125,7 +126,7 @@ export default function StatsPage({ currentUserId }: Props) {
                 <button
                   type="button"
                   className="btn btn--ghost btn--slim"
-                  onClick={() => selectAuthor(item.user_id)}
+                  onClick={() => selectPerson(item.user_id)}
                 >
                   {formatMoney(item.amount_minor)}
                 </button>
@@ -133,7 +134,8 @@ export default function StatsPage({ currentUserId }: Props) {
             ))}
           </div>
           <p className="hint">
-            Это траты по тому, кто их записал. Кто кому должен по общему счёту — на вкладке «Ещё».
+            Трата считается за тем, с чьего счёта записана, — даже если внёс её кто-то другой.
+            Кто кому должен по общему счёту — на вкладке «Ещё».
           </p>
         </>
       )}

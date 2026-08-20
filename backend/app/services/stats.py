@@ -52,7 +52,7 @@ async def period_summary(session: AsyncSession, flt: TxFilter) -> dict:
     catalog = {c.id: c for c in await categories_repo.list_all(session, include_archived=True)}
     by_category = _build_category_tree(rows, catalog, expense)
 
-    authors = await tx_repo.totals_by_author(session, expense_filter)
+    people = await tx_repo.totals_by_person(session, expense_filter)
     users = {u.id: u.display_name for u in await users_repo.list_all(session)}
 
     return {
@@ -61,9 +61,9 @@ async def period_summary(session: AsyncSession, flt: TxFilter) -> dict:
         "net_minor": income - expense,
         "count": await tx_repo.count(session, flt),
         "by_category": by_category,
-        "by_author": [
+        "by_person": [
             {"user_id": user_id, "name": users.get(user_id, "?"), "amount_minor": amount}
-            for user_id, amount in sorted(authors.items(), key=lambda i: i[1], reverse=True)
+            for user_id, amount in sorted(people.items(), key=lambda i: i[1], reverse=True)
         ],
     }
 

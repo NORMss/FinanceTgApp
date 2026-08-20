@@ -137,7 +137,7 @@ export const api = {
         period,
         limit,
         offset,
-        author_ids: filters.authorId,
+        person_ids: filters.personId,
         category_ids: filters.categoryId,
         types: filters.type,
         search: filters.search,
@@ -182,7 +182,7 @@ export const api = {
     request<Summary>(
       `/stats/summary?${query({
         period,
-        author_ids: filters.authorId,
+        person_ids: filters.personId,
         category_ids: filters.categoryId,
       })}`,
     ),

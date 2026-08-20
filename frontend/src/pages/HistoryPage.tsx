@@ -35,7 +35,13 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
   const users = useQuery({ queryKey: ['users'], queryFn: api.users })
 
   const catalog = useMemo(() => indexById(categories.data ?? []), [categories.data])
-  const authors = useMemo(() => new Map((users.data ?? []).map((u) => [u.id, u])), [users.data])
+  const people = useMemo(() => new Map((users.data ?? []).map((u) => [u.id, u])), [users.data])
+  // Чья трата — это владелец счёта, с которого она записана: запись за другого делается
+  // выбором его личного счёта, автором при этом остаётся тот, кто её вносил
+  const owners = useMemo(
+    () => new Map((accounts.data ?? []).map((a) => [a.id, a.owner_id])),
+    [accounts.data],
+  )
 
   const patch = (next: Partial<Filters>) => {
     haptic()
@@ -60,20 +66,22 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
   }, [page.data])
 
   const shown = page.data?.items.length ?? 0
-  const filtered = Boolean(filters.authorId || filters.type || filters.search)
+  const filtered = Boolean(filters.personId || filters.type || filters.search)
 
   return (
     <div className="page">
       <PeriodPicker value={period} onChange={setPeriod} />
 
-      {/* Фильтр по людям: в семейном учёте первый вопрос к истории — «кто это потратил» */}
+      {/* Фильтр по людям: в семейном учёте первый вопрос к истории — «чья это трата».
+          Именно чья, а не кем записана: трату за другого вносят с его личного счёта,
+          и найтись она должна у него */}
       {(users.data?.length ?? 0) > 1 && (
         <div className="chips">
           <button
             type="button"
             className="chip"
-            data-active={!filters.authorId}
-            onClick={() => patch({ authorId: null })}
+            data-active={!filters.personId}
+            onClick={() => patch({ personId: null })}
           >
             Все
           </button>
@@ -82,9 +90,9 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
               key={user.id}
               type="button"
               className="chip"
-              data-active={filters.authorId === user.id}
+              data-active={filters.personId === user.id}
               onClick={() =>
-                patch({ authorId: filters.authorId === user.id ? null : user.id })
+                patch({ personId: filters.personId === user.id ? null : user.id })
               }
             >
               {user.id === currentUserId ? 'Я' : user.display_name}
@@ -131,7 +139,7 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
           <div className="card card--tight">
             {group.items.map((tx) => {
               const category = tx.category_id ? catalog.get(tx.category_id) : undefined
-              const author = authors.get(tx.author_id)
+              const person = people.get(owners.get(tx.account_id) ?? tx.author_id)
               return (
                 <div
                   className="row row--tappable"
@@ -156,7 +164,7 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
                     </div>
                     <div className="row__sub">
                       {formatTime(tx.occurred_at)}
-                      {author && author.id !== currentUserId ? ` · ${author.display_name}` : ''}
+                      {person && person.id !== currentUserId ? ` · ${person.display_name}` : ''}
                       {tx.note ? ` · ${tx.note}` : ''}
                     </div>
                   </div>
