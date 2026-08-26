@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { api } from '../api'
 import { buildTree, fullName, indexById } from '../categories'
 import ErrorNote from '../components/ErrorNote'
+import { formatMoney, isValidAmount, normalizeAmountInput, toAmountInput } from '../format'
 import { haptic, notify } from '../telegram'
 import type { Category, CategoryKind } from '../types'
 
@@ -29,9 +30,11 @@ interface FormState {
   icon: string
   parentId: string | null
   kind: CategoryKind
+  /** Месячный лимит строкой, как в поле ввода. Пусто — лимита нет. */
+  limit: string
 }
 
-const EMPTY: FormState = { name: '', icon: '', parentId: null, kind: 'expense' }
+const EMPTY: FormState = { name: '', icon: '', parentId: null, kind: 'expense', limit: '' }
 
 type Forms = [string, string, string]
 
@@ -48,6 +51,11 @@ function pluralIndex(count: number): 0 | 1 | 2 {
 /** «1 подкатегория», «4 подкатегории», «11 подкатегорий». */
 function plural(count: number, forms: Forms): string {
   return `${count} ${forms[pluralIndex(count)]}`
+}
+
+/** Копейки лимита -> строка для поля ввода. undefined — лимита нет, поле пустое. */
+function limitInput(minor: number | undefined): string {
+  return minor === undefined ? '' : toAmountInput(minor)
 }
 
 const SUBCATEGORIES: Forms = ['подкатегория', 'подкатегории', 'подкатегорий']
@@ -74,6 +82,13 @@ export default function CategoriesPage({ onBack, onDone }: Props) {
     queryFn: () => api.categories(undefined, true),
   })
 
+  // Лимиты живут отдельно от категорий: их правят раз в полгода, а справочник — чаще
+  const budgets = useQuery({ queryKey: ['budgets'], queryFn: api.budgets })
+  const limits = useMemo(
+    () => new Map((budgets.data ?? []).map((item) => [item.category_id, item.limit_minor])),
+    [budgets.data],
+  )
+
   const visible = useMemo(
     () => (categories.data ?? []).filter((item) => item.kind === kind && !item.archived),
     [categories.data, kind],
@@ -87,15 +102,27 @@ export default function CategoriesPage({ onBack, onDone }: Props) {
   const refresh = () => queryClient.invalidateQueries()
 
   const save = useMutation({
-    mutationFn: (state: FormState) =>
-      state.id
-        ? api.updateCategory(state.id, { name: state.name.trim(), icon: state.icon })
-        : api.createCategory({
+    mutationFn: async (state: FormState) => {
+      const category = state.id
+        ? await api.updateCategory(state.id, { name: state.name.trim(), icon: state.icon })
+        : await api.createCategory({
             name: state.name.trim(),
             icon: state.icon,
             kind: state.kind,
             parent_id: state.parentId,
-          }),
+          })
+
+      // Лимит сохраняется тем же нажатием: заводить категорию и назначать ей лимит —
+      // одно намерение, и разносить его по двум экранам незачем
+      const limit = state.limit.trim()
+      const had = limits.has(category.id)
+      if (limit && isValidAmount(limit)) {
+        await api.setBudget(category.id, normalizeAmountInput(limit))
+      } else if (!limit && had) {
+        await api.dropBudget(category.id)
+      }
+      return category
+    },
     onSuccess: (_, state) => {
       notify('success')
       onDone(state.id ? 'Категория изменена' : 'Категория добавлена')
@@ -354,6 +381,24 @@ export default function CategoriesPage({ onBack, onDone }: Props) {
             />
           </div>
 
+          {form.kind === 'expense' && (
+            <>
+              <input
+                className="field"
+                inputMode="decimal"
+                style={{ marginTop: 8 }}
+                placeholder="Лимит в месяц — например 25 000"
+                value={form.limit}
+                onChange={(event) => setForm({ ...form, limit: event.target.value })}
+                aria-label="Месячный лимит"
+              />
+              <p className="hint" style={{ margin: '6px 0 0' }}>
+                Пусто — без лимита. С лимитом полоса в отчёте показывает, сколько от него
+                истрачено, и краснеет на переборе.
+              </p>
+            </>
+          )}
+
           <div className="chips chips--icons">
             {QUICK_ICONS.map((icon) => (
               <button
@@ -397,6 +442,9 @@ export default function CategoriesPage({ onBack, onDone }: Props) {
                 {children.length > 0
                   ? plural(children.length, SUBCATEGORIES)
                   : 'без подкатегорий'}
+                {limits.has(category.id)
+                  ? ` · лимит ${formatMoney(limits.get(category.id) ?? 0)}`
+                  : ''}
               </div>
             </div>
             <div className="row__tools">
@@ -411,6 +459,7 @@ export default function CategoriesPage({ onBack, onDone }: Props) {
                     icon: category.icon,
                     parentId: category.parent_id,
                     kind,
+                    limit: limitInput(limits.get(category.id)),
                   })
                 }
               >
@@ -440,6 +489,11 @@ export default function CategoriesPage({ onBack, onDone }: Props) {
               <div className="row__icon row__icon--small">{child.icon || '·'}</div>
               <div className="row__body">
                 <div className="row__title">{child.name}</div>
+                {limits.has(child.id) && (
+                  <div className="row__sub">
+                    лимит {formatMoney(limits.get(child.id) ?? 0)}
+                  </div>
+                )}
               </div>
               <div className="row__tools">
                 <button
@@ -453,6 +507,7 @@ export default function CategoriesPage({ onBack, onDone }: Props) {
                       icon: child.icon,
                       parentId: child.parent_id,
                       kind,
+                      limit: limitInput(limits.get(child.id)),
                     })
                   }
                 >

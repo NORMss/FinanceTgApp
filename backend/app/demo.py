@@ -35,6 +35,7 @@ from app.models import (
     User,
 )
 from app.repositories import accounts as accounts_repo
+from app.repositories import budgets as budgets_repo
 from app.repositories import categories as categories_repo
 from app.repositories import users as users_repo
 from app.security.initdata import TelegramUser
@@ -97,6 +98,20 @@ SALARIES = (
     (0, 10, 185_000, "зарплата"),  # (индекс участника, день месяца, сумма, заметка)
     (1, 25, 142_000, "зарплата"),
 )
+
+# Месячные лимиты. Заданы не на всё подряд: лимит имеет смысл там, где траты
+# управляемые, — на аренду его ставить бессмысленно, она всё равно фиксированная.
+# Один лимит (кафе) намеренно пробивается — иначе не видно, как выглядит перебор
+BUDGETS = (
+    ("Продукты", 30_000),
+    ("Кафе и рестораны", 12_000),
+    ("Транспорт", 8_000),
+)
+
+# Метка живёт поперёк категорий: поездка задевает такси, кафе, жильё и развлечения
+# сразу, и вычесть её из отчёта исключением категорий невозможно
+VACATION_TAG = "отпуск"
+VACATION_DAYS = 6
 
 
 class DemoError(RuntimeError):
@@ -170,6 +185,11 @@ async def seed(session: AsyncSession, *, months: int = 3, reset: bool = False) -
     start = today - timedelta(days=months * 30)
     created = 0
 
+    # Отпуск ставим в прошлый месяц: в текущем он мешал бы смотреть обычные траты,
+    # а в отчёте за прошлый — наоборот, показывает, зачем нужны исключения
+    vacation_start = (today - timedelta(days=40)).date()
+    vacation = {vacation_start + timedelta(days=offset) for offset in range(VACATION_DAYS)}
+
     day = start
     while day <= today:
         weekend = day.weekday() >= 5
@@ -198,6 +218,7 @@ async def seed(session: AsyncSession, *, months: int = 3, reset: bool = False) -
                 category_id=category.id,
                 occurred_at=moment,
                 note=rng.choice(pattern.notes) if pattern.notes else "",
+                tags=VACATION_TAG if day.date() in vacation else "",
                 source=rng.choice((TxSource.APP, TxSource.APP, TxSource.BOT)),
             )
             created += 1
@@ -252,6 +273,13 @@ async def seed(session: AsyncSession, *, months: int = 3, reset: bool = False) -
                 created += 1
 
         day += timedelta(days=1)
+
+    for category_name, limit in BUDGETS:
+        category = categories.get(category_name)
+        if category is not None:
+            await budgets_repo.upsert(
+                session, category_id=category.id, limit_minor=limit * 100
+            )
 
     await session.commit()
     return {"transactions": created, "people": [user.display_name for user in people]}

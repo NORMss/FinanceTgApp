@@ -7,10 +7,18 @@ import CategoriesPage from './pages/CategoriesPage'
 import HistoryPage from './pages/HistoryPage'
 import MorePage from './pages/MorePage'
 import StatsPage from './pages/StatsPage'
+import type { Range } from './period'
 import { isStandalone } from './telegram'
+import type { Filters } from './types'
 
 type Tab = 'add' | 'history' | 'stats' | 'more'
 type Screen = Tab | 'categories'
+
+/** Что отчёт передал Истории при провале из строки категории. */
+interface Handoff {
+  range: Range
+  filters: Filters
+}
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: 'add', icon: '➕', label: 'Добавить' },
@@ -59,6 +67,7 @@ function LoginError({ error, onRetry }: { error: unknown; onRetry: () => void })
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('add')
+  const [handoff, setHandoff] = useState<Handoff | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number>()
 
@@ -77,6 +86,19 @@ export default function App() {
     retry: false,
   })
 
+  /**
+   * Провал из отчёта в историю.
+   *
+   * Состояние живёт здесь, а не в Истории: экраны — это вкладки, они не размонтируются
+   * по маршруту, и передать условия иначе, чем через общего родителя, некуда. Ключ
+   * на HistoryPage перемонтирует её, чтобы новые фильтры стали начальными, а не
+   * подмешались к тем, что человек выставил в прошлый заход.
+   */
+  const drillDown = useCallback((range: Range, filters: Filters) => {
+    setHandoff({ range, filters })
+    setScreen('history')
+  }, [])
+
   if (session.isPending) {
     return <div className="center">Загружаем…</div>
   }
@@ -90,8 +112,17 @@ export default function App() {
   return (
     <div className="app">
       {screen === 'add' && <AddPage currentUserId={me.id} onDone={showToast} />}
-      {screen === 'history' && <HistoryPage currentUserId={me.id} onDone={showToast} />}
-      {screen === 'stats' && <StatsPage currentUserId={me.id} />}
+      {screen === 'history' && (
+        <HistoryPage
+          key={handoff ? `${handoff.filters.categoryId}` : 'plain'}
+          currentUserId={me.id}
+          initial={handoff ?? undefined}
+          onDone={showToast}
+        />
+      )}
+      {screen === 'stats' && (
+        <StatsPage currentUserId={me.id} onDrillDown={drillDown} onDone={showToast} />
+      )}
       {screen === 'more' && (
         <MorePage
           currentUser={me}
@@ -112,7 +143,12 @@ export default function App() {
           <button
             key={item.id}
             data-active={screen === item.id}
-            onClick={() => setScreen(item.id)}
+            onClick={() => {
+              // Уход с Истории руками отменяет провал: вкладка снова показывает
+              // то, что человек настроил сам, а не срез из чужого экрана
+              if (item.id !== 'history') setHandoff(null)
+              setScreen(item.id)
+            }}
             type="button"
           >
             <span>{item.icon}</span>

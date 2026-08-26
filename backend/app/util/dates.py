@@ -57,3 +57,34 @@ def resolve_period(preset: str, today: date | None = None) -> Period:
 def month_key(value: datetime) -> str:
     """'2026-08' — ключ группировки для помесячной аналитики."""
     return as_utc(value).strftime("%Y-%m")
+
+
+# Раньше этой даты данных нет: журнал заводят вместе с приложением. Период,
+# начинающийся здесь, — это «Всё время», и сравнивать его не с чем
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def previous_bounds(start: datetime, end: datetime) -> Period | None:
+    """Предыдущий период той же природы — для сравнения «а как было раньше».
+
+    Календарный месяц сдвигается календарно, а не на фиксированное число дней:
+    в феврале двадцать восемь дней, и окно длиной в январь, отложенное назад,
+    захватило бы кусок декабря — февраль после такого сравнения всегда выглядел бы
+    дешевле, чем был.
+
+    Для всего остального берём окно ровно той же длины, вплотную перед началом:
+    неделя сравнивается с прошлой неделей, год с прошлым годом, произвольные
+    десять дней — с предыдущими десятью.
+
+    None означает «сравнивать не с чем»: у периода «Всё время» предыдущего нет.
+    """
+    begin, finish = as_utc(start), as_utc(end)
+    if begin <= EPOCH:
+        return None
+
+    if begin == day_start(begin.date()) and begin.day == 1:
+        if finish == day_start(add_months(begin.date(), 1)):
+            previous = add_months(begin.date(), -1)
+            return month_range(previous.year, previous.month)
+
+    return begin - (finish - begin), begin

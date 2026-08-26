@@ -343,6 +343,13 @@ body {
   font-size: 20px;
 }
 
+/* Кнопка в ряду из трёх: на узком экране подпись обязана уместиться в одну строку */
+.btn--compact {
+  font-size: 14px;
+  padding: 11px 8px;
+  white-space: nowrap;
+}
+
 .btn--slim {
   width: auto;
   padding: 7px 12px;
@@ -601,4 +608,113 @@ body {
     opacity: 0;
     transform: translate(-50%, 8px);
   }
+}
+
+/* --- отчёт: подписи под итогами, полосы лимитов, график --- */
+
+.totals__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--hint);
+}
+
+/* Рост расходов не красим в красный: перерасход в одном месяце — не авария,
+   а факт. Цветом отмечаем только направление, приглушённо */
+.totals__meta span[data-tone='up'] {
+  color: var(--danger);
+  opacity: 0.85;
+}
+
+.totals__meta span[data-tone='down'] {
+  color: var(--success);
+  opacity: 0.85;
+}
+
+.totals__excluded {
+  margin: 10px 0 0;
+  text-align: center;
+}
+
+/* Полоса, вышедшая за лимит. Ширину зажимаем сотней процентов в разметке,
+   поэтому здесь остаётся только цвет */
+.bar > i[data-over='true'] {
+  background: var(--danger);
+}
+
+/* Листание месяцев: стрелки по краям, подпись посередине */
+.stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.stepper .icon-btn {
+  font-size: 22px;
+  padding: 2px 12px;
+  color: var(--link);
+}
+
+/* Флажок в списке исключений. Родной input: он приносит фокус с клавиатуры
+   и попадание пальцем без дополнительной разметки */
+.check {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+}
+
+.check:disabled {
+  opacity: 0.45;
+}
+
+/* --- график динамики --- */
+
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 150px;
+}
+
+.chart__col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.chart__col > i {
+  display: block;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+/* Последний столбик — текущий месяц. Он и есть ответ на вопрос «как сейчас»,
+   остальные стоят фоном для сравнения */
+.chart__col > i[data-last='true'] {
+  opacity: 1;
+}
+
+.chart__value,
+.chart__label {
+  font-size: 10px;
+  color: var(--hint);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__value {
+  min-height: 13px;
 }

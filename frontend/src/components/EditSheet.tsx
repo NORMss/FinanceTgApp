@@ -36,6 +36,7 @@ export default function EditSheet({ tx, categories, accounts, onClose, onDone }:
   const [amount, setAmount] = useState(toAmountInput(tx.amount_minor))
   const [categoryId, setCategoryId] = useState<string | null>(tx.category_id)
   const [note, setNote] = useState(tx.note)
+  const [tags, setTags] = useState(tx.tags)
   const [accountId, setAccountId] = useState(tx.account_id)
   const [occurredAt, setOccurredAt] = useState(toLocalInput(tx.occurred_at))
 
@@ -51,6 +52,7 @@ export default function EditSheet({ tx, categories, accounts, onClose, onDone }:
       if (toMinor(amount) !== tx.amount_minor) payload.amount = normalizeAmountInput(amount)
       if (categoryId !== tx.category_id) payload.category_id = categoryId
       if (note.trim() !== tx.note) payload.note = note.trim()
+      if (tags.trim() !== tx.tags) payload.tags = tags
       if (accountId !== tx.account_id) payload.account_id = accountId
       if (occurredAt !== toLocalInput(tx.occurred_at)) {
         payload.occurred_at = new Date(occurredAt).toISOString()
@@ -129,6 +131,14 @@ export default function EditSheet({ tx, categories, accounts, onClose, onDone }:
           placeholder="Комментарий"
           value={note}
           onChange={(event) => setNote(event.target.value)}
+        />
+
+        <input
+          className="field"
+          placeholder="Метки через запятую"
+          value={tags}
+          onChange={(event) => setTags(event.target.value)}
+          aria-label="Метки"
         />
 
         <input

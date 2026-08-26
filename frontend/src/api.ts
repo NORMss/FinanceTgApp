@@ -1,21 +1,25 @@
+import { type Range, rangeQuery } from './period'
 import { getInitData, getTimezone } from './telegram'
 import type {
   Account,
   Balances,
+  Budget,
   Category,
   CategoryDeleted,
   CategoryKind,
   CategoryUsage,
   Filters,
   LoginResponse,
-  Period,
   Reminder,
+  ReportView,
   Settlement,
   Summary,
   SyncStatus,
+  Tag,
   Transaction,
   TransactionPage,
   TransactionType,
+  Trend,
   User,
 } from './types'
 
@@ -65,6 +69,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T
 }
 
+/** То же самое, но ответ читается текстом: выгрузка для нейросети — markdown, не JSON. */
+async function requestText(path: string): Promise<string> {
+  const response = await fetch(`${BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).catch(() => {
+    throw new ApiError('Сервер не ответил', 0)
+  })
+  if (!response.ok) throw new ApiError(`Ошибка ${response.status}`, response.status)
+  return response.text()
+}
+
 export async function login(): Promise<LoginResponse> {
   const result = await request<LoginResponse>('/auth/login', {
     method: 'POST',
@@ -76,15 +91,41 @@ export async function login(): Promise<LoginResponse> {
   return result
 }
 
-/** Собирает query-строку, пропуская пустые фильтры. */
-function query(params: Record<string, string | number | null | undefined>): string {
+type QueryValue = string | number | boolean | string[] | null | undefined
+
+/**
+ * Собирает query-строку, пропуская пустые фильтры.
+ *
+ * Массив разворачивается в повторяющийся ключ (`ids=a&ids=b`), а не склеивается через
+ * запятую: FastAPI разбирает `list[str]` именно так, и «a,b» приехал бы одним
+ * идентификатором — фильтр молча не сработал бы ни на одной операции.
+ */
+function query(params: Record<string, QueryValue>): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== null && value !== undefined && value !== '') {
+    if (Array.isArray(value)) {
+      for (const item of value) if (item) search.append(key, item)
+    } else if (typeof value === 'boolean') {
+      if (value) search.set(key, 'true')
+    } else if (value !== null && value !== undefined && value !== '') {
       search.set(key, String(value))
     }
   }
   return search.toString()
+}
+
+/** Общая часть query-строки отчёта, истории и выгрузки — один разбор на всех. */
+function filterQuery(filters: Filters): Record<string, QueryValue> {
+  return {
+    person_ids: filters.personId,
+    category_ids: filters.categoryId,
+    account_ids: filters.accountId,
+    search: filters.search,
+    exclude_category_ids: filters.excludeCategoryIds,
+    exclude_uncategorized: filters.excludeUncategorized,
+    tags: filters.tags,
+    exclude_tags: filters.excludeTags,
+  }
 }
 
 export const api = {
@@ -131,16 +172,14 @@ export const api = {
   createAccount: (payload: { name: string; is_shared?: boolean }) =>
     request<Account>('/accounts', { method: 'POST', body: JSON.stringify(payload) }),
 
-  transactions: (period: Period, filters: Filters = {}, limit = 50, offset = 0) =>
+  transactions: (range: Range, filters: Filters = {}, limit = 50, offset = 0) =>
     request<TransactionPage>(
       `/transactions?${query({
-        period,
+        ...rangeQuery(range),
+        ...filterQuery(filters),
         limit,
         offset,
-        person_ids: filters.personId,
-        category_ids: filters.categoryId,
         types: filters.type,
-        search: filters.search,
       })}`,
     ),
 
@@ -151,6 +190,7 @@ export const api = {
     account_id?: string | null
     counter_account_id?: string | null
     note?: string
+    tags?: string
     occurred_at?: string
     split_mode?: 'auto' | 'none'
   }) =>
@@ -167,6 +207,7 @@ export const api = {
       category_id?: string | null
       account_id?: string
       note?: string
+      tags?: string
       occurred_at?: string
     },
   ) =>
@@ -178,16 +219,47 @@ export const api = {
   deleteTransaction: (id: string) =>
     request<void>(`/transactions/${id}`, { method: 'DELETE' }),
 
-  summary: (period: Period, filters: Filters = {}) =>
+  summary: (range: Range, filters: Filters = {}, compare = false) =>
     request<Summary>(
-      `/stats/summary?${query({
-        period,
-        person_ids: filters.personId,
-        category_ids: filters.categoryId,
-      })}`,
+      `/stats/summary?${query({ ...rangeQuery(range), ...filterQuery(filters), compare })}`,
+    ),
+  trend: (range: Range, filters: Filters = {}) =>
+    request<Trend>(`/stats/trend?${query({ ...rangeQuery(range), ...filterQuery(filters) })}`),
+  shareReport: (range: Range, filters: Filters = {}) =>
+    request<{ sent: boolean }>(
+      `/stats/share?${query({ ...rangeQuery(range), ...filterQuery(filters) })}`,
+      { method: 'POST' },
     ),
   balances: () => request<Balances>('/stats/balances'),
   settle: () => request<Settlement>('/stats/settle'),
+
+  budgets: () => request<Budget[]>('/budgets'),
+  setBudget: (categoryId: string, limit: string) =>
+    request<Budget>(`/budgets/${categoryId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ limit }),
+    }),
+  dropBudget: (categoryId: string) =>
+    request<void>(`/budgets/${categoryId}`, { method: 'DELETE' }),
+
+  reportViews: () => request<ReportView[]>('/report-views'),
+  saveReportView: (name: string, payload: Record<string, unknown>) =>
+    request<ReportView>('/report-views', {
+      method: 'POST',
+      body: JSON.stringify({ name, payload }),
+    }),
+  dropReportView: (id: string) => request<void>(`/report-views/${id}`, { method: 'DELETE' }),
+
+  tags: () => request<Tag[]>('/tags'),
+
+  /**
+   * Выгрузка для нейросети — markdown-текстом, чтобы положить его в буфер обмена.
+   *
+   * Не ссылкой: токен ходит заголовком, и по голому адресу пришёл бы 401. Скачивание
+   * файла внутри Telegram тоже ненадёжно, а текст вставляется в чат с моделью как есть.
+   */
+  llmExport: (range: Range, filters: Filters = {}) =>
+    requestText(`/export/llm?${query({ ...rangeQuery(range), ...filterQuery(filters) })}`),
 
   reminder: () => request<Reminder>('/me/reminder'),
   saveReminder: (payload: { enabled?: boolean; time?: string; tz?: string }) =>
