@@ -96,7 +96,14 @@ async function clickByText(page, selector, text) {
 /** На экране ввода выбираем сумму и категорию — пустая форма ничего не показывает. */
 async function pickCategory(page) {
   await page.type('.amount-input', '1290')
-  await clickByText(page, '.chip', 'Продукты')
+  // Список свёрнут до трёх рядов, и нужная категория может оказаться за чипсом «Ещё»
+  const visible = await page.$$eval('.chips--roots .chip', (nodes) =>
+    nodes.map((node) => node.textContent),
+  )
+  if (!visible.some((text) => text.includes('Продукты'))) {
+    await clickByText(page, '.chips--roots .chip', 'Ещё')
+  }
+  await clickByText(page, '.chips--roots .chip', 'Продукты')
   await wait(250)
 }
 

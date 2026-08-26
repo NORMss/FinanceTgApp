@@ -13,8 +13,18 @@
   --accent-text: var(--tg-button-text-color, #ffffff);
   --danger: #e5484d;
   --success: #30a46c;
+  /* Приглушённый акцент для второстепенных переключателей: тот же цвет, что у кнопки
+     действия, но фоном, а не заливкой — выбор виден, а спорить с «Добавить» он не может.
+     Запасное значение на случай, если браузер не знает color-mix, — см. ниже */
+  --accent-soft: rgb(42 127 212 / 15%);
   --radius: 14px;
   --gap: 12px;
+}
+
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  :root {
+    --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
 }
 
 :root[data-scheme='dark'] {
@@ -218,8 +228,10 @@ body {
   gap: 3px;
 }
 
-.segmented button {
+.segmented > button,
+.segmented > label {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
   color: var(--hint);
@@ -227,12 +239,49 @@ body {
   padding: 8px;
   font-size: 14px;
   font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
 }
 
-.segmented button[data-active='true'] {
+.segmented > button[data-active='true'],
+.segmented > label[data-active='true'] {
   background: var(--bg);
   color: var(--text);
   box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+/* Тот же переключатель приглушённым цветом — для выбора, который стоит рядом
+   с главным и не должен с ним соревноваться (день операции) */
+.segmented--soft {
+  margin-top: 10px;
+}
+
+.segmented--soft > button[data-active='true'],
+.segmented--soft > label[data-active='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+/* Календарь открывает само поле, растянутое поверх кнопки: showPicker() есть
+   не во всех вебвью, а невидимый input работает везде */
+.segmented > label {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.segmented > label input[type='date'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  opacity: 0;
 }
 
 .chips {
@@ -241,11 +290,18 @@ body {
   gap: 8px;
 }
 
-.chip {
+/* Геометрия общая с линейкой замера (.picker__ruler): пока обе стороны считают
+   ширину одинаково, свёрнутый список ломаться не может.
+   font-family кнопке приходится задавать явно — сама она её не наследует */
+.chip,
+.picker__ruler > i {
   border: none;
   border-radius: 999px;
   padding: 8px 13px;
+  font-family: inherit;
   font-size: 14px;
+  font-style: normal;
+  line-height: inherit;
   background: var(--secondary-bg);
   color: var(--text);
   white-space: nowrap;
@@ -275,6 +331,86 @@ body {
 
 .chip__more {
   opacity: 0.5;
+}
+
+/* Линейка выбора категорий: тот же набор чипсов вне потока. Нужна, чтобы измерить
+   ширины всех чипсов, включая спрятанные, — у display: none ширины нет */
+.picker {
+  position: relative;
+}
+
+.picker__ruler {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* --- раскрывающаяся строка --- */
+
+.disclosure {
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.disclosure__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  padding: 13px 14px;
+}
+
+.disclosure__title {
+  flex: none;
+}
+
+/* Что уже выбрано — справа и приглушённо: строка отвечает на «что там внутри»,
+   не заставляя её раскрывать */
+.disclosure__summary {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--hint);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.disclosure__chevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--hint);
+  display: inline-block;
+  transform: rotate(90deg);
+  transition: transform 0.18s;
+}
+
+.disclosure[data-open='true'] .disclosure__chevron {
+  transform: rotate(-90deg);
+}
+
+.disclosure__summary + .disclosure__chevron {
+  margin-left: 0;
+}
+
+.disclosure__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 14px;
 }
 
 .chips--icons {

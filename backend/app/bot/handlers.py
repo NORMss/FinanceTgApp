@@ -161,7 +161,9 @@ async def quick_add(message: Message, session: AsyncSession, user: User) -> None
         CategoryKind.INCOME if parsed.tx_type == TransactionType.INCOME else CategoryKind.EXPENSE
     )
     suggestions = await categories_repo.list_all(session, kind=kind)
-    recent_ids = await tx_repo.recent_category_ids(session, user.id)
+    recent_ids = await tx_repo.recent_category_ids(
+        session, user.id, tx_type=parsed.tx_type, limit=6
+    )
     by_id = {category.id: category for category in suggestions}
     ordered = [by_id[cid] for cid in recent_ids if cid in by_id]
     ordered += [category for category in suggestions if category not in ordered]

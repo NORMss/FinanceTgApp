@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { api } from '../api'
+import { dayOf, withDay } from '../day'
 import { formatMoney, isValidAmount, normalizeAmountInput, toAmountInput, toMinor } from '../format'
 import { haptic, notify } from '../telegram'
 import type { Account, Category, Transaction, TransactionType } from '../types'
 import CategoryPicker from './CategoryPicker'
+import DayPicker from './DayPicker'
 import ErrorNote from './ErrorNote'
 
 interface Props {
@@ -14,13 +16,6 @@ interface Props {
   accounts: Account[]
   onClose: () => void
   onDone: (message: string) => void
-}
-
-/** `2026-08-15T10:30:00Z` -> `2026-08-15T10:30` для <input type="datetime-local">. */
-function toLocalInput(iso: string): string {
-  const date = new Date(iso)
-  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-  return shifted.toISOString().slice(0, 16)
 }
 
 /**
@@ -38,7 +33,7 @@ export default function EditSheet({ tx, categories, accounts, onClose, onDone }:
   const [note, setNote] = useState(tx.note)
   const [tags, setTags] = useState(tx.tags)
   const [accountId, setAccountId] = useState(tx.account_id)
-  const [occurredAt, setOccurredAt] = useState(toLocalInput(tx.occurred_at))
+  const [day, setDay] = useState(dayOf(tx.occurred_at))
 
   const users = useQuery({ queryKey: ['users'], queryFn: api.users })
   const author = users.data?.find((user) => user.id === tx.author_id)
@@ -54,9 +49,8 @@ export default function EditSheet({ tx, categories, accounts, onClose, onDone }:
       if (note.trim() !== tx.note) payload.note = note.trim()
       if (tags.trim() !== tx.tags) payload.tags = tags
       if (accountId !== tx.account_id) payload.account_id = accountId
-      if (occurredAt !== toLocalInput(tx.occurred_at)) {
-        payload.occurred_at = new Date(occurredAt).toISOString()
-      }
+      // Время операции не трогаем: меняется только день, часы остаются те, что были
+      if (day !== dayOf(tx.occurred_at)) payload.occurred_at = withDay(tx.occurred_at, day)
       return api.updateTransaction(tx.id, payload)
     },
     onSuccess: (updated) => {
@@ -141,13 +135,10 @@ export default function EditSheet({ tx, categories, accounts, onClose, onDone }:
           aria-label="Метки"
         />
 
-        <input
-          className="field"
-          type="datetime-local"
-          value={occurredAt}
-          onChange={(event) => setOccurredAt(event.target.value)}
-          aria-label="Дата и время"
-        />
+        <p className="section-title" style={{ marginBottom: 0 }}>
+          Когда
+        </p>
+        <DayPicker value={day} onChange={setDay} />
 
         {accounts.length > 1 && (
           <select

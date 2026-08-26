@@ -106,22 +106,13 @@ export default function HistoryPage({ currentUserId, initial, onDone }: Props) {
               {user.id === currentUserId ? 'Я' : user.display_name}
             </button>
           ))}
-          {(['expense', 'income'] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              className="chip chip--ghost"
-              data-active={filters.type === value}
-              onClick={() => patch({ type: filters.type === value ? null : value })}
-            >
-              {TYPE_LABELS[value]}
-            </button>
-          ))}
         </div>
       )}
 
-      {/* Категория. Отдельной строкой, а не среди прочих чипсов: сюда приходят
-          из отчёта, и первое, что человек должен увидеть, — по чему именно фильтр */}
+      {/* Категория и вид операции. Категория первой: сюда приходят из отчёта,
+          и первое, что человек должен увидеть, — по чему именно фильтр.
+          Расходы и доходы стояли в ряду людей и вместе с ним пропадали у того,
+          кто ведёт учёт один, — а разделить приход и трату нужно и одному */}
       <div className="chips">
         <button
           type="button"
@@ -146,6 +137,17 @@ export default function HistoryPage({ currentUserId, initial, onDone }: Props) {
             Сбросить
           </button>
         )}
+        {(['expense', 'income'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            className="chip chip--ghost"
+            data-active={filters.type === value}
+            onClick={() => patch({ type: filters.type === value ? null : value })}
+          >
+            {TYPE_LABELS[value]}
+          </button>
+        ))}
       </div>
 
       {pickerOpen && (

@@ -417,6 +417,126 @@ test('сохранённый вид возвращает набор фильтр
   assertEqual(toMinor((await totals(page)).expense), filtered, 'вид не восстановил фильтры')
 })
 
+// --- форма ввода ------------------------------------------------------------
+
+/** Сколько рядов занимают чипсы категорий: чипсы одного ряда стоят на одной высоте. */
+async function categoryRows(page) {
+  return page.$$eval(
+    '.chips--roots .chip',
+    (nodes) => new Set(nodes.map((node) => node.offsetTop)).size,
+  )
+}
+
+async function categoryChips(page) {
+  return page.$$eval('.chips--roots .chip', (nodes) =>
+    nodes.map((node) => node.textContent.trim()),
+  )
+}
+
+/** Подпись выбранного дня в переключателе «Другая / Вчера / Сегодня». */
+async function pickedDay(page) {
+  return page.$eval('.segmented--soft', (node) => {
+    const active = [...node.children].find((child) => child.dataset.active === 'true')
+    return active ? active.textContent.trim() : ''
+  })
+}
+
+test('форма ввода помещается на экран без прокрутки', async (page) => {
+  await openTab(page, 'Добавить')
+
+  // U1: «трата за три касания» держится на том, что все три цели видны сразу.
+  // Кнопка записи, уехавшая под панель вкладок, добавляет к ним прокрутку
+  const button = await page.$eval('.page > .btn', (node) => node.getBoundingClientRect().bottom)
+  const tabbar = await page.$eval('.tabbar', (node) => node.getBoundingClientRect().top)
+  assert(button <= tabbar, `кнопка «Добавить» уходит под вкладки: ${button} > ${tabbar}`)
+})
+
+test('категории свёрнуты до трёх рядов и раскрываются последним чипсом', async (page) => {
+  await openTab(page, 'Добавить')
+
+  // U2: на телефоне развёрнутый справочник занимал полэкрана
+  assertEqual(await categoryRows(page), 3, 'свёрнутый список занимает не три ряда')
+
+  const chips = await categoryChips(page)
+  assert(
+    chips[chips.length - 1].startsWith('Ещё'),
+    `последний чипс — «${chips[chips.length - 1]}», а не «Ещё N»`,
+  )
+
+  await clickByText(page, '.chips--roots .chip', 'Ещё')
+  assert(await categoryRows(page) > 3, 'после раскрытия список остался в трёх рядах')
+  assert(
+    (await categoryChips(page)).length > chips.length,
+    'раскрытие не добавило ни одной категории',
+  )
+
+  await clickByText(page, '.chips--roots .chip', 'Свернуть')
+  assertEqual(await categoryRows(page), 3, 'свернуть обратно не получилось')
+})
+
+test('запись за вчера ложится во вчерашний день и поднимает категорию', async (page) => {
+  await openTab(page, 'Добавить')
+
+  // Второй чипс: заведомо виден и заведомо не первый — значит, его переезд наверх
+  // после записи ни с чем не спутать
+  const target = (await categoryChips(page))[1]
+
+  await page.type('.amount-input', '345')
+  await clickByText(page, '.chips--roots .chip', target)
+  await clickByText(page, '.segmented--soft button', 'Вчера')
+  await clickByText(page, '.page > .btn', 'Добавить')
+  await page.waitForFunction(() => document.body.innerText.includes('записан'), {
+    timeout: 15_000,
+  })
+  await settled(page)
+
+  // U3: порядок категорий задаёт момент записи, а не дата операции. Иначе трата
+  // задним числом выбирала бы категорию, которая никуда не переезжает
+  assertEqual((await categoryChips(page))[0], target, 'категория не встала первой')
+
+  // U4: день возвращается на сегодня. Забытая «Вчера» — единственная ошибка формы,
+  // которую человек не замечает
+  assertEqual(await pickedDay(page), 'Сегодня', 'день не вернулся на сегодня')
+
+  await openTab(page, 'История')
+  // Первого числа вчерашний день лежит в прошлом месяце, а история открыта на этом
+  if (new Date().getDate() === 1) {
+    await clickByText(page, '.segmented button', 'Прошлый')
+    await settled(page)
+  }
+  const yesterday = await page.evaluate(() => {
+    const title = [...document.querySelectorAll('.section-title--row')].find((node) =>
+      node.textContent.startsWith('Вчера'),
+    )
+    return title?.nextElementSibling.textContent ?? ''
+  })
+  assert(yesterday.includes('345'), 'трата не попала во вчерашний день истории')
+})
+
+test('фильтр по счёту на отчёте свёрнут в строку', async (page) => {
+  await openTab(page, 'Отчёт')
+
+  // U5: ряд из четырёх чипсов стоял выше первой цифры отчёта и отодвигал её за экран
+  const head = await page.$eval('.disclosure__head', (node) => node.textContent)
+  assert(head.includes('Кошелёк'), `строка счёта выглядит иначе: «${head}»`)
+  assert(head.includes('Все счета'), 'свёрнутая строка не показывает текущий выбор')
+  assertEqual(
+    await page.$$eval('.disclosure__body', (nodes) => nodes.length),
+    0,
+    'строка счёта раскрыта сразу',
+  )
+
+  await page.click('.disclosure__head')
+  await wait(300)
+  const chips = await page.$$eval('.disclosure__body .chip', (nodes) =>
+    nodes.map((node) => node.textContent.trim()),
+  )
+  assert(
+    chips.some((text) => text.includes('Общий счёт')),
+    `в раскрытом фильтре нет счетов: ${chips.join(' / ')}`,
+  )
+})
+
 // --- запуск -----------------------------------------------------------------
 
 const browser = await puppeteer.launch({

@@ -134,7 +134,8 @@ export const api = {
     request<Category[]>(
       `/categories?${query({ kind, include_archived: includeArchived ? 'true' : '' })}`,
     ),
-  recentCategories: () => request<string[]>('/categories/recent'),
+  recentCategories: (kind: CategoryKind = 'expense') =>
+    request<string[]>(`/categories/recent?${query({ kind })}`),
   users: () => request<User[]>('/users'),
 
   createCategory: (payload: {
