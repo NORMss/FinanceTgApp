@@ -197,6 +197,34 @@ class CategoryTotalOut(BaseModel):
     share: float
     parent_id: str | None = None
     own_minor: int = 0
+    # Столько ушло в прошлом периоде. Ноль и при «не сравнивали», и при «не тратили» —
+    # различать эти случаи клиенту незачем: обе ситуации рисуются одинаково, без стрелки
+    previous_minor: int = 0
+    # Месячный лимит. Приходит только для периодов, совпадающих с календарным месяцем
+    limit_minor: int = 0
+
+
+class TxBriefOut(BaseModel):
+    """Операция в отчёте: крупнейшие траты периода. Полная карточка — в Истории."""
+
+    id: str
+    occurred_at: datetime
+    amount_minor: int
+    category_id: str | None = None
+    author_id: str
+    note: str
+
+
+class RepeatedSpendOut(BaseModel):
+    note: str
+    count: int
+    total_minor: int
+
+
+class PeriodTotalsOut(BaseModel):
+    income_minor: int
+    expense_minor: int
+    net_minor: int
 
 
 class AuthorTotalOut(BaseModel):
@@ -211,9 +239,70 @@ class SummaryOut(BaseModel):
     income_minor: int
     expense_minor: int
     net_minor: int
+    # Операции, из которых сложились цифры выше: расходы плюс доходы. Переводы
+    # не в счёт — отчёт их не показывает
     count: int
+    # Сколько вычли исключения. Без этой цифры сумме слева нельзя верить:
+    # непонятно, это месяц был дешёвый или из него что-то убрали
+    excluded_minor: int = 0
+    excluded_count: int = 0
     by_category: list[CategoryTotalOut]
+    by_income_category: list[CategoryTotalOut] = Field(default_factory=list)
+    # Кто записал операцию — и кому она в итоге досталась. На общем счёте это
+    # разные вещи, поэтому обе цифры приходят сразу, без второго запроса
     by_author: list[AuthorTotalOut]
+    by_spender: list[AuthorTotalOut] = Field(default_factory=list)
+    largest: list[TxBriefOut] = Field(default_factory=list)
+    repeated: list[RepeatedSpendOut] = Field(default_factory=list)
+    # null — сравнивать не с чем: «Всё время» не имеет предыдущего периода
+    previous: PeriodTotalsOut | None = None
+
+
+class TrendCategoryOut(BaseModel):
+    category_id: str | None = None
+    name: str
+    icon: str
+    # По одному числу на каждый месяц из `months` — в том же порядке
+    amounts: list[int]
+
+
+class TrendOut(BaseModel):
+    months: list[str]
+    expense: list[int]
+    income: list[int]
+    categories: list[TrendCategoryOut]
+
+
+# --- бюджеты и сохранённые виды ---
+
+
+class BudgetOut(BaseModel):
+    category_id: str
+    limit_minor: int
+
+
+class BudgetUpdate(BaseModel):
+    # Строкой, как и все суммы внутрь: «25 000» разбирает сервер через Decimal
+    limit: str
+
+
+class ReportViewOut(BaseModel):
+    id: str
+    name: str
+    # Набор фильтров как есть — сервер его не интерпретирует, только хранит
+    payload: dict
+    sort: int
+
+
+class ReportViewCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    payload: dict = Field(default_factory=dict)
+    sort: int = 100
+
+
+class TagOut(BaseModel):
+    name: str
+    count: int
 
 
 class AccountBalanceOut(BaseModel):

@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, SessionDep
+from app.api.filters import FiltersDep, build
 from app.api.periods import period_bounds
 from app.api.schemas import (
     TransactionCreate,
@@ -14,8 +15,6 @@ from app.api.schemas import (
 from app.models import TransactionType
 from app.repositories import accounts as accounts_repo
 from app.repositories import transactions as tx_repo
-from app.repositories.transactions import TxFilter
-from app.services import catalog as catalog_service
 from app.services import ledger
 from app.util.money import to_minor
 
@@ -29,25 +28,15 @@ async def list_transactions(
     session: SessionDep,
     _: CurrentUser,
     bounds: PeriodDep,
+    filters: FiltersDep,
     types: Annotated[list[TransactionType] | None, Query()] = None,
-    category_ids: Annotated[list[str] | None, Query()] = None,
-    account_ids: Annotated[list[str] | None, Query()] = None,
-    author_ids: Annotated[list[str] | None, Query()] = None,
-    search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> TransactionPage:
-    start, end = bounds
-    flt = TxFilter(
-        start=start,
-        end=end,
-        types=types or [],
-        # Выбранная категория тянет за собой подкатегории: «Продукты» — это и «Пятёрочка»
-        category_ids=await catalog_service.expand_ids(session, category_ids or []),
-        account_ids=account_ids or [],
-        author_ids=author_ids or [],
-        search=search,
-    )
+    """Список операций. Фильтры разбирает тот же хелпер, что и сводку: провал
+    из категории отчёта в историю обязан показать ровно те операции, из которых
+    сложилась цифра, по которой человек нажал."""
+    flt = await build(session, filters, bounds, types=types)
     items = await tx_repo.list_page(session, flt, limit=limit, offset=offset)
     return TransactionPage(
         items=[TransactionOut.model_validate(item) for item in items],

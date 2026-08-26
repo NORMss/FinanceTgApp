@@ -84,14 +84,53 @@ export interface CategoryTotal {
   share: number
   parent_id: string | null
   own_minor: number
+  /** Сколько ушло в прошлом периоде. Ноль — либо не сравнивали, либо не тратили. */
+  previous_minor: number
+  /** Месячный лимит. Приходит только для периодов длиной ровно в календарный месяц. */
+  limit_minor: number
 }
 
 /** Фильтры истории и отчёта. Пустые поля в запрос не уходят. */
 export interface Filters {
   authorId?: string | null
   categoryId?: string | null
+  accountId?: string | null
   type?: TransactionType | null
   search?: string
+  /** Категории, вычтенные из отчёта. Родитель уносит с собой подкатегории. */
+  excludeCategoryIds?: string[]
+  /** «Без категории» нельзя указать идентификатором — только этим флагом. */
+  excludeUncategorized?: boolean
+  tags?: string[]
+  excludeTags?: string[]
+}
+
+export interface AuthorTotal {
+  user_id: string
+  name: string
+  amount_minor: number
+}
+
+/** Крупнейшая трата периода. Полная карточка открывается в Истории. */
+export interface TxBrief {
+  id: string
+  occurred_at: string
+  amount_minor: number
+  category_id: string | null
+  author_id: string
+  note: string
+}
+
+export interface RepeatedSpend {
+  note: string
+  count: number
+  total_minor: number
+}
+
+export interface PeriodTotals {
+  income_minor: number
+  expense_minor: number
+  net_minor: number
 }
 
 export interface Summary {
@@ -101,8 +140,51 @@ export interface Summary {
   expense_minor: number
   net_minor: number
   count: number
+  /** Сколько вычли исключения — без этой цифры итогу нельзя верить. */
+  excluded_minor: number
+  excluded_count: number
   by_category: CategoryTotal[]
-  by_author: { user_id: string; name: string; amount_minor: number }[]
+  by_income_category: CategoryTotal[]
+  /** Кто записал операцию — и кому она в итоге досталась (на общем счёте это разное). */
+  by_author: AuthorTotal[]
+  by_spender: AuthorTotal[]
+  largest: TxBrief[]
+  repeated: RepeatedSpend[]
+  /** null — сравнивать не с чем: у «Всего времени» предыдущего периода нет. */
+  previous: PeriodTotals | null
+}
+
+export interface TrendCategory {
+  category_id: string | null
+  name: string
+  icon: string
+  /** По одному числу на каждый месяц из months, в том же порядке. */
+  amounts: number[]
+}
+
+export interface Trend {
+  months: string[]
+  expense: number[]
+  income: number[]
+  categories: TrendCategory[]
+}
+
+export interface Budget {
+  category_id: string
+  limit_minor: number
+}
+
+export interface ReportView {
+  id: string
+  name: string
+  /** Набор фильтров как есть — сервер его только хранит. */
+  payload: Record<string, unknown>
+  sort: number
+}
+
+export interface Tag {
+  name: string
+  count: number
 }
 
 export interface Balances {

@@ -1,6 +1,16 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, catalog, export, health, reminders, stats, sync, transactions
+from app.api.routes import (
+    auth,
+    catalog,
+    export,
+    health,
+    reminders,
+    reports,
+    stats,
+    sync,
+    transactions,
+)
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health.router)
@@ -8,6 +18,7 @@ api_router.include_router(auth.router)
 api_router.include_router(catalog.router)
 api_router.include_router(transactions.router)
 api_router.include_router(stats.router)
+api_router.include_router(reports.router)
 api_router.include_router(sync.router)
 api_router.include_router(export.router)
 api_router.include_router(reminders.router)

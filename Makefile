@@ -33,8 +33,13 @@ api: ## Запустить бэкенд локально (http://localhost:8000)
 web: ## Запустить фронт локально (http://localhost:5173)
 	cd frontend && npm run dev
 
-test: ## Прогнать тесты
+test: ## Прогнать тесты бэкенда
 	cd backend && .venv/bin/pytest -q
+
+test-ui: ## Проверки интерфейса в браузере (нужны запущенное `make demo` и Chrome)
+	@curl -sf $${DEMO_URL:-http://127.0.0.1:8000}/api/health >/dev/null \
+		|| { echo "Сначала в другом терминале: make demo"; exit 1; }
+	cd scripts && npm install --silent --no-audit --no-fund && npm run test:ui
 
 lint: ## Проверить стиль бэкенда
 	cd backend && .venv/bin/ruff check app tests
@@ -100,4 +105,4 @@ down: ## Остановить docker
 logs: ## Логи приложения
 	docker compose logs -f app
 
-.PHONY: help setup migrate revision api web test lint build demo demo-build demo-docker data up up-proxy up-shared check-sheets check-proxy-net down logs
+.PHONY: help setup migrate revision api web test test-ui lint build demo demo-build demo-docker data up up-proxy up-shared check-sheets check-proxy-net down logs

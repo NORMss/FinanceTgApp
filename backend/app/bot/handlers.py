@@ -13,7 +13,7 @@ from app.repositories import categories as categories_repo
 from app.repositories import transactions as tx_repo
 from app.repositories.transactions import TxFilter
 from app.services import catalog as catalog_service
-from app.services import ledger, llm_export, quick_entry
+from app.services import ledger, llm_export, quick_entry, report_text
 from app.services import stats as stats_service
 from app.util.dates import resolve_period
 from app.util.money import format_amount
@@ -60,27 +60,14 @@ async def cmd_help(message: Message) -> None:
 @router.message(F.text == "📊 За месяц")
 async def cmd_month(message: Message, session: AsyncSession) -> None:
     start, end = resolve_period("month")
-    data = await stats_service.period_summary(session, TxFilter(start=start, end=end))
-
-    lines = [
-        f"<b>{start:%B %Y}</b>",
-        f"Расходы: <b>{format_amount(data['expense_minor'])}</b>",
-        f"Доходы: <b>{format_amount(data['income_minor'])}</b>",
-        f"Сальдо: <b>{format_amount(data['net_minor'], sign=True)}</b>",
-    ]
-    if data["by_category"]:
-        lines.append("\n<b>Топ категорий</b>")
-        for item in data["by_category"][:7]:
-            share = round(item.share * 100)
-            label = f"{item.icon} {item.name}".strip()
-            lines.append(f"{label} — {format_amount(item.amount_minor)} ({share}%)")
-    if len(data["by_author"]) > 1:
-        lines.append("\n<b>Кто сколько потратил</b>")
-        lines += [
-            f"{row['name']} — {format_amount(row['amount_minor'])}" for row in data["by_author"]
-        ]
-
-    await message.answer("\n".join(lines), reply_markup=open_app_button())
+    # compare=True — «выросли ли мы к прошлому месяцу» первый вопрос к сводке,
+    # а второй запрос ради него человеку делать неоткуда: в чате нет фильтров
+    data = await stats_service.period_summary(
+        session, TxFilter(start=start, end=end), compare=True
+    )
+    await message.answer(
+        report_text.render(data, start, end), reply_markup=open_app_button()
+    )
 
 
 @router.message(Command("balance"))

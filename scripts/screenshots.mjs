@@ -55,6 +55,8 @@ const SHOTS = [
   { name: 'add', tab: 'Добавить', prepare: pickCategory },
   { name: 'history', tab: 'История' },
   { name: 'stats', tab: 'Отчёт' },
+  { name: 'report-filter', tab: 'Отчёт', prepare: openReportFilter },
+  { name: 'trend', tab: 'Отчёт', prepare: openTrend },
   { name: 'edit', tab: 'История', prepare: openEditSheet },
   { name: 'categories', tab: 'Ещё', prepare: openCategories },
   { name: 'category-delete', tab: 'Ещё', prepare: openDeletePanel },
@@ -96,6 +98,23 @@ async function pickCategory(page) {
   await page.type('.amount-input', '1290')
   await clickByText(page, '.chip', 'Продукты')
   await wait(250)
+}
+
+/** Шторка исключений — главный ответ на вопрос «сколько мы тратим на жизнь». */
+async function openReportFilter(page) {
+  await clickByText(page, '.chip', 'Что не показывать')
+  await page.waitForSelector('.sheet')
+  await wait(450)
+}
+
+/** График динамики раскрыт: свёрнутый он на снимке выглядит пустой строкой. */
+async function openTrend(page) {
+  await clickByText(page, '.section-title--row .btn--link', 'показать')
+  await page.waitForSelector('.chart')
+  await page.evaluate(() => {
+    document.querySelector('.chart').scrollIntoView({ block: 'center' })
+  })
+  await wait(450)
 }
 
 async function openEditSheet(page) {

@@ -23,6 +23,7 @@ export default function AddPage({ currentUserId, onDone }: Props) {
   const [amount, setAmount] = useState('')
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [note, setNote] = useState('')
+  const [tags, setTags] = useState('')
   const [accountId, setAccountId] = useState<string | null>(null)
 
   const kind = type === 'income' ? 'income' : 'expense'
@@ -38,6 +39,7 @@ export default function AddPage({ currentUserId, onDone }: Props) {
         category_id: categoryId,
         account_id: accountId,
         note: note.trim(),
+        tags,
       }),
     onSuccess: (tx) => {
       notify('success')
@@ -46,6 +48,9 @@ export default function AddPage({ currentUserId, onDone }: Props) {
       )
       setAmount('')
       setNote('')
+      // Метку не сбрасываем намеренно: траты в отпуске идут подряд, и проставлять
+      // «отпуск» заново для каждой — работа, ради которой метками перестают пользоваться
+
       // Сумма меняет всё: список, сводку, остатки и взаиморасчёты
       queryClient.invalidateQueries()
     },
@@ -114,6 +119,16 @@ export default function AddPage({ currentUserId, onDone }: Props) {
         placeholder="Комментарий"
         value={note}
         onChange={(event) => setNote(event.target.value)}
+      />
+
+      {/* Метка отвечает на «в рамках чего»: отпуск размазан по такси, кафе и жилью,
+          и вычесть его из отчёта исключением категорий невозможно */}
+      <input
+        className="field"
+        placeholder="Метки через запятую — отпуск, ремонт"
+        value={tags}
+        onChange={(event) => setTags(event.target.value)}
+        aria-label="Метки"
       />
 
       {visibleAccounts.length > 1 && (

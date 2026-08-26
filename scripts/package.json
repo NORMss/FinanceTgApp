@@ -3,9 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Служебные скрипты сопровождения: съёмка скриншотов для README",
+  "description": "Служебные скрипты сопровождения: съёмка скриншотов и проверки интерфейса",
   "scripts": {
-    "screenshots": "node screenshots.mjs"
+    "screenshots": "node screenshots.mjs",
+    "test:ui": "node ui-tests.mjs"
   },
   "devDependencies": {
     "puppeteer-core": "^24.0.0"

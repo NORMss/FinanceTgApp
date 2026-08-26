@@ -16,6 +16,7 @@ from app.repositories import outbox as outbox_repo
 from app.repositories import users as users_repo
 from app.util.dates import now
 from app.util.money import split_evenly
+from app.util.tags import normalize_tags
 
 ENTITY = "transaction"
 
@@ -115,7 +116,7 @@ async def create_transaction(
         category_id=category_id,
         author_id=author.id,
         note=note.strip(),
-        tags=tags.strip(),
+        tags=normalize_tags(tags),
         source=source,
         external_id=external_id,
     )
@@ -175,7 +176,7 @@ async def update_transaction(
     if note is not None:
         tx.note = note.strip()
     if tags is not None:
-        tx.tags = tags.strip()
+        tx.tags = normalize_tags(tags)
 
     if tx.type == TransactionType.TRANSFER:
         if not tx.counter_account_id:

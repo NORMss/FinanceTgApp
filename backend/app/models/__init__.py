@@ -8,6 +8,7 @@ from app.models.enums import (
     TransactionType,
     TxSource,
 )
+from app.models.report import Budget, ReportView
 from app.models.sync import AppSetting, SyncOutbox
 from app.models.transaction import Transaction, TxSplit
 from app.models.user import User
@@ -17,10 +18,12 @@ __all__ = [
     "AccountKind",
     "AppSetting",
     "Base",
+    "Budget",
     "Category",
     "CategoryKind",
     "CategoryRule",
     "OutboxOp",
+    "ReportView",
     "SyncOutbox",
     "Transaction",
     "TransactionType",

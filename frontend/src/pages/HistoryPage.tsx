@@ -3,15 +3,19 @@ import { useMemo, useState } from 'react'
 
 import { api } from '../api'
 import { fullName, iconOf, indexById } from '../categories'
+import CategoryPicker from '../components/CategoryPicker'
 import EditSheet from '../components/EditSheet'
 import ErrorNote from '../components/ErrorNote'
 import PeriodPicker from '../components/PeriodPicker'
 import { formatDay, formatMoney, formatTime } from '../format'
+import { DEFAULT_RANGE, type Range, rangeKey } from '../period'
 import { haptic } from '../telegram'
-import type { Filters, Period, Transaction, TransactionType } from '../types'
+import type { Filters, Transaction, TransactionType } from '../types'
 
 interface Props {
   currentUserId: string
+  /** Условия, с которыми сюда пришли из отчёта. */
+  initial?: { range: Range; filters: Filters }
   onDone: (message: string) => void
 }
 
@@ -21,14 +25,15 @@ const TYPE_LABELS: Record<TransactionType, string> = {
   transfer: 'Переводы',
 }
 
-export default function HistoryPage({ currentUserId, onDone }: Props) {
-  const [period, setPeriod] = useState<Period>('month')
-  const [filters, setFilters] = useState<Filters>({})
+export default function HistoryPage({ currentUserId, initial, onDone }: Props) {
+  const [range, setRange] = useState<Range>(initial?.range ?? DEFAULT_RANGE)
+  const [filters, setFilters] = useState<Filters>(initial?.filters ?? {})
   const [editing, setEditing] = useState<Transaction | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const page = useQuery({
-    queryKey: ['transactions', period, filters],
-    queryFn: () => api.transactions(period, filters, 200),
+    queryKey: ['transactions', rangeKey(range), filters],
+    queryFn: () => api.transactions(range, filters, 200),
   })
   const categories = useQuery({ queryKey: ['categories', 'all'], queryFn: () => api.categories() })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
@@ -36,6 +41,7 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
 
   const catalog = useMemo(() => indexById(categories.data ?? []), [categories.data])
   const authors = useMemo(() => new Map((users.data ?? []).map((u) => [u.id, u])), [users.data])
+  const picked = filters.categoryId ? catalog.get(filters.categoryId) : undefined
 
   const patch = (next: Partial<Filters>) => {
     haptic()
@@ -60,11 +66,13 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
   }, [page.data])
 
   const shown = page.data?.items.length ?? 0
-  const filtered = Boolean(filters.authorId || filters.type || filters.search)
+  const filtered = Boolean(
+    filters.authorId || filters.type || filters.search || filters.categoryId,
+  )
 
   return (
     <div className="page">
-      <PeriodPicker value={period} onChange={setPeriod} />
+      <PeriodPicker value={range} onChange={setRange} />
 
       {/* Фильтр по людям: в семейном учёте первый вопрос к истории — «кто это потратил» */}
       {(users.data?.length ?? 0) > 1 && (
@@ -101,6 +109,47 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
               {TYPE_LABELS[value]}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Категория. Отдельной строкой, а не среди прочих чипсов: сюда приходят
+          из отчёта, и первое, что человек должен увидеть, — по чему именно фильтр */}
+      <div className="chips">
+        <button
+          type="button"
+          className="chip chip--ghost"
+          data-active={Boolean(picked)}
+          onClick={() => {
+            haptic()
+            setPickerOpen((current) => !current)
+          }}
+        >
+          {picked ? `${iconOf(picked, catalog)} ${fullName(picked, catalog)}` : '🗂 Категория'}
+        </button>
+        {picked && (
+          <button
+            type="button"
+            className="chip chip--ghost"
+            onClick={() => {
+              patch({ categoryId: null })
+              setPickerOpen(false)
+            }}
+          >
+            Сбросить
+          </button>
+        )}
+      </div>
+
+      {pickerOpen && (
+        <div className="card">
+          <CategoryPicker
+            categories={categories.data ?? []}
+            value={filters.categoryId ?? null}
+            onChange={(id) => {
+              patch({ categoryId: id })
+              if (id) setPickerOpen(false)
+            }}
+          />
         </div>
       )}
 
@@ -158,6 +207,7 @@ export default function HistoryPage({ currentUserId, onDone }: Props) {
                       {formatTime(tx.occurred_at)}
                       {author && author.id !== currentUserId ? ` · ${author.display_name}` : ''}
                       {tx.note ? ` · ${tx.note}` : ''}
+                      {tx.tags ? ` · #${tx.tags.split(',').join(' #')}` : ''}
                     </div>
                   </div>
                   <div className={`row__amount amount--${tx.type}`}>

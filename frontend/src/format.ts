@@ -72,6 +72,22 @@ export function formatTime(iso: string): string {
     .padStart(2, '0')}`
 }
 
+/**
+ * «+18 %» — насколько текущий период дороже предыдущего.
+ *
+ * null означает «сравнивать не с чем»: в прошлом периоде ноль, и любая трата
+ * в этом даёт бесконечный рост. Показывать «+∞ %» честно, но бесполезно.
+ */
+export function percentDelta(current: number, previous: number): string | null {
+  if (!previous) return null
+  const percent = Math.round(((current - previous) / previous) * 100)
+  // Знак обязателен, включая ноль: в строке категории дельта стоит на том же месте,
+  // где у остальных строк доля в расходах, и голое «0%» читалось бы как «ничего
+  // не потратили» вместо «столько же, сколько в прошлом месяце»
+  const sign = percent > 0 ? '+' : percent < 0 ? '−' : '±'
+  return `${sign}${Math.abs(percent)}%`
+}
+
 export const PERIOD_LABELS: Record<string, string> = {
   week: 'Неделя',
   month: 'Месяц',
