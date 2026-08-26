@@ -11,7 +11,7 @@ from app.api.schemas import (
     CategoryUsageOut,
     UserOut,
 )
-from app.models import CategoryKind
+from app.models import CategoryKind, TransactionType
 from app.repositories import accounts as accounts_repo
 from app.repositories import categories as categories_repo
 from app.repositories import transactions as tx_repo
@@ -157,6 +157,17 @@ async def delete_category(
 
 
 @router.get("/categories/recent", response_model=list[str])
-async def recent_categories(session: SessionDep, user: CurrentUser) -> list[str]:
-    """ID последних использованных категорий — верхний ряд кнопок в форме ввода."""
-    return await tx_repo.recent_category_ids(session, user.id)
+async def recent_categories(
+    session: SessionDep,
+    user: CurrentUser,
+    kind: CategoryKind = Query(CategoryKind.EXPENSE),
+) -> list[str]:
+    """ID категорий в порядке последнего использования — им форма ввода сортирует кнопки.
+
+    Расходы и доходы считаются отдельно: у них и категории разные, и «последнее»
+    у зарплаты своё.
+    """
+    tx_type = (
+        TransactionType.INCOME if kind == CategoryKind.INCOME else TransactionType.EXPENSE
+    )
+    return await tx_repo.recent_category_ids(session, user.id, tx_type=tx_type)

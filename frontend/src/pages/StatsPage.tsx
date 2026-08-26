@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { api } from '../api'
 import { indexById } from '../categories'
 import CategoryFilterSheet from '../components/CategoryFilterSheet'
+import Disclosure from '../components/Disclosure'
 import ErrorNote from '../components/ErrorNote'
 import PeriodPicker from '../components/PeriodPicker'
 import ReportTotals from '../components/ReportTotals'
@@ -133,6 +134,7 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
   const people = byShares ? data?.by_spender ?? [] : data?.by_person ?? []
   const hiddenCount = saved.excluded.length + saved.excludedTags.length +
     (saved.excludeUncategorized ? 1 : 0)
+  const pickedAccount = (accounts.data ?? []).find((account) => account.id === saved.accountId)
 
   const resetExclusions = () =>
     patch({ excluded: [], excludeUncategorized: false, excludedTags: [] })
@@ -203,29 +205,45 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
         </div>
       )}
 
-      {/* Счета: «только общий» — второй по частоте вопрос после «только мои траты» */}
+      {/* Счета: «только общий» — второй по частоте вопрос после «только мои траты».
+          Но спрашивают его редко, а ряд из четырёх чипсов стоял выше первой цифры
+          и отодвигал отчёт за нижний край экрана. Свёрнутой строкой видно и текущий
+          выбор, и то, что это вообще фильтр, а не разбивка */}
       {(accounts.data?.length ?? 0) > 1 && (
-        <div className="chips">
-          <button
-            type="button"
-            className="chip chip--ghost"
-            data-active={!saved.accountId}
-            onClick={() => patch({ accountId: null })}
-          >
-            Все счета
-          </button>
-          {(accounts.data ?? []).map((account) => (
+        <Disclosure
+          title="Кошелёк"
+          summary={pickedAccount?.name ?? 'Все счета'}
+          defaultOpen={Boolean(saved.accountId)}
+        >
+          <div className="chips">
             <button
-              key={account.id}
               type="button"
               className="chip chip--ghost"
-              data-active={saved.accountId === account.id}
-              onClick={() => patch({ accountId: saved.accountId === account.id ? null : account.id })}
+              data-active={!saved.accountId}
+              onClick={() => patch({ accountId: null })}
             >
-              {account.is_shared ? '👥' : '👤'} {account.name}
+              Все счета
             </button>
-          ))}
-        </div>
+            {(accounts.data ?? []).map((account) => (
+              <button
+                key={account.id}
+                type="button"
+                className="chip chip--ghost"
+                data-active={saved.accountId === account.id}
+                onClick={() =>
+                  patch({ accountId: saved.accountId === account.id ? null : account.id })
+                }
+              >
+                {account.is_shared ? '👥' : '👤'} {account.name}
+              </button>
+            ))}
+          </div>
+          <p className="hint" style={{ margin: 0 }}>
+            Отчёт по одному кошельку: только те операции, что записаны на этот счёт.
+            «Общий» покажет траты из общего кошелька, личный — то, что человек платил
+            своими.
+          </p>
+        </Disclosure>
       )}
 
       <div className="chips">

@@ -265,3 +265,46 @@ async def test_api_rejects_bad_category(auth_client: httpx.AsyncClient):
     assert (await auth_client.post("/api/categories", json={"name": "  "})).status_code == 400
     duplicate = await auth_client.post("/api/categories", json={"name": "Продукты"})
     assert duplicate.status_code == 400
+
+
+async def _id_of(client: httpx.AsyncClient, name: str) -> str:
+    categories = (await client.get("/api/categories?include_archived=true")).json()
+    return next(item["id"] for item in categories if item["name"] == name)
+
+
+async def test_recent_categories_follow_the_order_of_entry(auth_client: httpx.AsyncClient):
+    """Последняя выбранная категория встаёт первой — даже когда трата внесена задним числом.
+
+    Порядок задаёт момент записи, а не дата операции. Разница появилась вместе
+    с выбором дня в форме: чек за прошлый год, внесённый только что, всё равно значит
+    «эту категорию я выбрал последней», и в следующий раз рука потянется к ней.
+    """
+    products = await _id_of(auth_client, "Продукты")
+    cafe = await _id_of(auth_client, "Кафе и рестораны")
+
+    await auth_client.post("/api/transactions", json={"amount": "100", "category_id": products})
+    await auth_client.post(
+        "/api/transactions",
+        json={"amount": "200", "category_id": cafe, "occurred_at": "2020-01-01T10:00:00Z"},
+    )
+
+    assert (await auth_client.get("/api/categories/recent")).json()[:2] == [cafe, products]
+
+    # И наоборот: следующая запись в «Продукты» возвращает их на первое место
+    await auth_client.post("/api/transactions", json={"amount": "300", "category_id": products})
+    assert (await auth_client.get("/api/categories/recent")).json()[:2] == [products, cafe]
+
+
+async def test_recent_categories_are_split_by_kind(auth_client: httpx.AsyncClient):
+    """У расходов и доходов свой порядок: категории у них разные, и мешать их нельзя."""
+    products = await _id_of(auth_client, "Продукты")
+    salary = await _id_of(auth_client, "Зарплата")
+
+    await auth_client.post("/api/transactions", json={"amount": "100", "category_id": products})
+    await auth_client.post(
+        "/api/transactions",
+        json={"amount": "50000", "type": "income", "category_id": salary},
+    )
+
+    assert (await auth_client.get("/api/categories/recent")).json() == [products]
+    assert (await auth_client.get("/api/categories/recent?kind=income")).json() == [salary]

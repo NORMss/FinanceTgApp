@@ -339,18 +339,31 @@ async def soft_delete(session: AsyncSession, tx: Transaction) -> Transaction:
     return tx
 
 
-async def recent_category_ids(session: AsyncSession, author_id: str, limit: int = 6) -> list[str]:
-    """Последние использованные категории — для кнопок быстрого ввода."""
+async def recent_category_ids(
+    session: AsyncSession,
+    author_id: str,
+    *,
+    tx_type: TransactionType = TransactionType.EXPENSE,
+    limit: int = 40,
+) -> list[str]:
+    """Категории в порядке последнего использования — верхний ряд кнопок быстрого ввода.
+
+    Считаем по created_at, а не по occurred_at: это «когда я в последний раз выбирал
+    эту категорию», а не «когда была трата». Разница видна, как только появилась
+    возможность записать вчерашний чек: сортировка по дате операции оставила бы
+    только что выбранный «Ресторан» позади сегодняшних записей, хотя рука тянется
+    именно к нему.
+    """
     query = (
-        select(Transaction.category_id, func.max(Transaction.occurred_at).label("last_used"))
+        select(Transaction.category_id, func.max(Transaction.created_at).label("last_used"))
         .where(
             Transaction.deleted_at.is_(None),
             Transaction.author_id == author_id,
             Transaction.category_id.is_not(None),
-            Transaction.type == TransactionType.EXPENSE,
+            Transaction.type == tx_type,
         )
         .group_by(Transaction.category_id)
-        .order_by(func.max(Transaction.occurred_at).desc())
+        .order_by(func.max(Transaction.created_at).desc())
         .limit(limit)
     )
     result = await session.execute(query)

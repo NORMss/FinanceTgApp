@@ -3,6 +3,9 @@ import { useState } from 'react'
 
 import { api } from '../api'
 import CategoryPicker from '../components/CategoryPicker'
+import DayPicker from '../components/DayPicker'
+import Disclosure from '../components/Disclosure'
+import { dayKey, isoForDay } from '../day'
 import { formatMoney, isValidAmount, normalizeAmountInput } from '../format'
 import { haptic, notify } from '../telegram'
 import type { TransactionType } from '../types'
@@ -14,21 +17,34 @@ interface Props {
 
 /**
  * Главный экран: добавить трату за три касания.
+ *
+ * Всё, что спрашивается всегда, стоит в один столбец и помещается на экран без
+ * прокрутки: сумма, день, категория, кнопка. Комментарий и метки заполняются в одной
+ * записи из десяти и убраны под раскрывающуюся строку — на телефоне два постоянно
+ * висящих поля уводили кнопку «Добавить» за нижний край.
+ *
  * Категории отсортированы так, что последние использованные стоят первыми — на практике
- * именно они закрывают почти весь ежедневный ввод.
+ * именно они закрывают почти весь ежедневный ввод, поэтому трёх рядов хватает.
  */
 export default function AddPage({ currentUserId, onDone }: Props) {
   const queryClient = useQueryClient()
   const [type, setType] = useState<TransactionType>('expense')
   const [amount, setAmount] = useState('')
+  const [day, setDay] = useState(dayKey())
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [tags, setTags] = useState('')
   const [accountId, setAccountId] = useState<string | null>(null)
+  // Растёт после каждой записи и пересобирает выбор категорий: список приезжает
+  // в новом порядке, и раскрытые ряды должны схлопнуться обратно
+  const [entry, setEntry] = useState(0)
 
   const kind = type === 'income' ? 'income' : 'expense'
   const categories = useQuery({ queryKey: ['categories', kind], queryFn: () => api.categories(kind) })
-  const recent = useQuery({ queryKey: ['recent-categories'], queryFn: api.recentCategories })
+  const recent = useQuery({
+    queryKey: ['recent-categories', kind],
+    queryFn: () => api.recentCategories(kind),
+  })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const users = useQuery({ queryKey: ['users'], queryFn: api.users })
 
@@ -41,6 +57,9 @@ export default function AddPage({ currentUserId, onDone }: Props) {
         account_id: accountId,
         note: note.trim(),
         tags,
+        // Сегодняшний день не шлём: время проставит сервер, и в истории окажется
+        // настоящий момент записи, а не полдень
+        occurred_at: day === dayKey() ? undefined : isoForDay(day),
       }),
     onSuccess: (tx) => {
       notify('success')
@@ -49,6 +68,11 @@ export default function AddPage({ currentUserId, onDone }: Props) {
       )
       setAmount('')
       setNote('')
+      // День возвращаем на сегодня, хотя вносить вчерашнее пачкой из-за этого дольше.
+      // Забытая «Вчера» — единственная ошибка формы, которую человек не замечает:
+      // сумма и категория видны в истории сразу, а день расходится с реальностью молча
+      setDay(dayKey())
+      setEntry((current) => current + 1)
       // Метку не сбрасываем намеренно: траты в отпуске идут подряд, и проставлять
       // «отпуск» заново для каждой — работа, ради которой метками перестают пользоваться
 
@@ -59,6 +83,9 @@ export default function AddPage({ currentUserId, onDone }: Props) {
   })
 
   const canSubmit = isValidAmount(amount) && !create.isPending
+  // Свёрнутая строка обязана показывать, что в ней лежит: метка живёт между записями,
+  // и «отпуск», забытый в поле, разъехался бы по всем тратам после возвращения
+  const details = [note.trim(), tags.trim() && `🏷 ${tags.trim()}`].filter(Boolean).join(' · ')
   const visibleAccounts = accounts.data ?? []
   // Свой счёт — умолчание. Общий выбирают руками: трата с него делится пополам
   // и превращается в долг второго участника, а это должно быть решением, а не побочным
@@ -107,6 +134,7 @@ export default function AddPage({ currentUserId, onDone }: Props) {
             Введите сумму числом, например 1250 или 1250,40
           </p>
         )}
+        <DayPicker value={day} onChange={setDay} />
       </div>
 
       <div className="card">
@@ -114,29 +142,32 @@ export default function AddPage({ currentUserId, onDone }: Props) {
           Категория
         </p>
         <CategoryPicker
+          key={`${kind}:${entry}`}
           categories={categories.data ?? []}
           value={categoryId}
           onChange={setCategoryId}
-          order={kind === 'expense' ? recent.data : undefined}
+          order={recent.data}
+          collapsible
         />
       </div>
 
-      <input
-        className="field"
-        placeholder="Комментарий"
-        value={note}
-        onChange={(event) => setNote(event.target.value)}
-      />
-
-      {/* Метка отвечает на «в рамках чего»: отпуск размазан по такси, кафе и жилью,
-          и вычесть его из отчёта исключением категорий невозможно */}
-      <input
-        className="field"
-        placeholder="Метки через запятую — отпуск, ремонт"
-        value={tags}
-        onChange={(event) => setTags(event.target.value)}
-        aria-label="Метки"
-      />
+      <Disclosure title="Комментарий и метки" summary={details}>
+        <input
+          className="field"
+          placeholder="Комментарий"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+        />
+        {/* Метка отвечает на «в рамках чего»: отпуск размазан по такси, кафе и жилью,
+            и вычесть его из отчёта исключением категорий невозможно */}
+        <input
+          className="field"
+          placeholder="Метки через запятую — отпуск, ремонт"
+          value={tags}
+          onChange={(event) => setTags(event.target.value)}
+          aria-label="Метки"
+        />
+      </Disclosure>
 
       {visibleAccounts.length > 1 && (
         <>
