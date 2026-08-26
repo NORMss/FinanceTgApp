@@ -30,6 +30,10 @@ MAX_IDS = 200
 class FilterParams:
     """Сырые фильтры из запроса — до раскрытия дерева категорий."""
 
+    # «Чья трата» — про деньги, этим фильтруют история и отчёт
+    person_ids: list[str] = field(default_factory=list)
+    # «Кто записал» — про действие ввода. Совпадают не всегда: запись за другого
+    # делается с его личного счёта, и принадлежит она ему, а не автору
     author_ids: list[str] = field(default_factory=list)
     category_ids: list[str] = field(default_factory=list)
     account_ids: list[str] = field(default_factory=list)
@@ -50,6 +54,7 @@ def _capped(values: list[str] | None, name: str) -> list[str]:
 
 
 def filter_params(
+    person_ids: Annotated[list[str] | None, Query()] = None,
     author_ids: Annotated[list[str] | None, Query()] = None,
     category_ids: Annotated[list[str] | None, Query()] = None,
     account_ids: Annotated[list[str] | None, Query()] = None,
@@ -60,6 +65,7 @@ def filter_params(
     search: str | None = Query(None),
 ) -> FilterParams:
     return FilterParams(
+        person_ids=_capped(person_ids, "person_ids"),
         author_ids=_capped(author_ids, "author_ids"),
         category_ids=_capped(category_ids, "category_ids"),
         account_ids=_capped(account_ids, "account_ids"),
@@ -96,6 +102,7 @@ async def build(
         types=types or [],
         category_ids=await catalog_service.expand_ids(session, params.category_ids),
         account_ids=params.account_ids,
+        person_ids=params.person_ids,
         author_ids=params.author_ids,
         search=params.search,
         exclude_category_ids=await catalog_service.expand_ids(

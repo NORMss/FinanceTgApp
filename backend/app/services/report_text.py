@@ -71,10 +71,10 @@ def render(data: dict, start: datetime, end: datetime) -> str:
             label = f"{item.icon} {item.name}".strip()
             lines.append(f"{label} — {format_amount(item.amount_minor)} ({share}%)")
 
-    if len(data["by_author"]) > 1:
+    if len(data["by_person"]) > 1:
         lines.append("\n<b>Кто сколько потратил</b>")
         lines += [
-            f"{row['name']} — {format_amount(row['amount_minor'])}" for row in data["by_author"]
+            f"{row['name']} — {format_amount(row['amount_minor'])}" for row in data["by_person"]
         ]
 
     return "\n".join(lines)

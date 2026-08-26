@@ -181,7 +181,11 @@ async def period_summary(
     income_rows = await tx_repo.totals_by_category(session, income_flt)
     by_income_category = _build_category_tree(income_rows, catalog, income)
 
-    authors = await tx_repo.totals_by_author(session, expense_flt)
+    # Две разные цифры «кто сколько», и обе верны. `by_person` — по счёту: с чьего
+    # счёта ушли деньги, а у общего счёта владельца нет, и трата относится к тому,
+    # кто её записал. `by_spender` — по долям: та же трата с общего счёта делится
+    # пополам. Отчёт показывает первую и переключателем вторую
+    people = await tx_repo.totals_by_person(session, expense_flt)
     spenders = await tx_repo.spend_by_user(session, expense_flt)
     users = {u.id: u.display_name for u in await users_repo.list_all(session)}
 
@@ -226,7 +230,7 @@ async def period_summary(
         "excluded_count": excluded_count,
         "by_category": by_category,
         "by_income_category": by_income_category,
-        "by_author": _named(authors, users),
+        "by_person": _named(people, users),
         "by_spender": _named(spenders, users),
         "largest": largest,
         "repeated": repeated,

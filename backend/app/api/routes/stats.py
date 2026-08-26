@@ -37,7 +37,11 @@ async def summary(
     compare: bool = Query(False, description="добавить итоги предыдущего периода"),
 ) -> SummaryOut:
     """Итоги за период. Фильтры те же, что у списка операций, — иначе отчёт
-    показывал бы одно, а история по тем же условиям другое."""
+    показывал бы одно, а история по тем же условиям другое.
+
+    person_ids — «чьи это траты», author_ids — «кто их записал». Совпадают они не всегда:
+    трату за другого записывает кто-то один, а принадлежит она тому, за кого записана.
+    """
     start, end = bounds
     flt = await build(session, filters, bounds)
     data = await stats_service.period_summary(session, flt, compare=compare)
@@ -52,7 +56,7 @@ async def summary(
         excluded_count=data["excluded_count"],
         by_category=[asdict(item) for item in data["by_category"]],
         by_income_category=[asdict(item) for item in data["by_income_category"]],
-        by_author=data["by_author"],
+        by_person=data["by_person"],
         by_spender=data["by_spender"],
         largest=[asdict(item) for item in data["largest"]],
         repeated=[asdict(item) for item in data["repeated"]],

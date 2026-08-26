@@ -24,7 +24,7 @@ interface Props {
 /** Что человек оставил открытым в прошлый раз. Всё это переживает закрытие приложения. */
 interface Saved {
   range: Range
-  authorId: string | null
+  personId: string | null
   accountId: string | null
   excluded: string[]
   excludeUncategorized: boolean
@@ -33,7 +33,7 @@ interface Saved {
 
 const EMPTY: Saved = {
   range: DEFAULT_RANGE,
-  authorId: null,
+  personId: null,
   accountId: null,
   excluded: [],
   excludeUncategorized: false,
@@ -58,7 +58,7 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
 
   const filters: Filters = useMemo(
     () => ({
-      authorId: saved.authorId,
+      personId: saved.personId,
       accountId: saved.accountId,
       excludeCategoryIds: saved.excluded,
       excludeUncategorized: saved.excludeUncategorized,
@@ -130,7 +130,7 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
   const data = summary.data
   const catalog = useMemo(() => indexById(categories.data ?? []), [categories.data])
   const rows = data ? (side === 'expense' ? data.by_category : data.by_income_category) : []
-  const people = byShares ? data?.by_spender ?? [] : data?.by_author ?? []
+  const people = byShares ? data?.by_spender ?? [] : data?.by_person ?? []
   const hiddenCount = saved.excluded.length + saved.excludedTags.length +
     (saved.excludeUncategorized ? 1 : 0)
 
@@ -177,14 +177,15 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
         </div>
       )}
 
-      {/* Отчёт по одному человеку: те же цифры, но только по его записям */}
+      {/* Отчёт по одному человеку: те же цифры, но только по его тратам. Его —
+          значит записанным на его счёт, кто бы их ни вносил */}
       {(users.data?.length ?? 0) > 1 && (
         <div className="chips">
           <button
             type="button"
             className="chip"
-            data-active={!saved.authorId}
-            onClick={() => patch({ authorId: null })}
+            data-active={!saved.personId}
+            onClick={() => patch({ personId: null })}
           >
             Вместе
           </button>
@@ -193,8 +194,8 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
               key={user.id}
               type="button"
               className="chip"
-              data-active={saved.authorId === user.id}
-              onClick={() => patch({ authorId: saved.authorId === user.id ? null : user.id })}
+              data-active={saved.personId === user.id}
+              onClick={() => patch({ personId: saved.personId === user.id ? null : user.id })}
             >
               {user.id === currentUserId ? 'Я' : user.display_name}
             </button>
@@ -331,7 +332,7 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
         </>
       )}
 
-      {data && !saved.authorId && people.length > 1 && (
+      {data && !saved.personId && people.length > 1 && (
         <>
           <p className="section-title section-title--row">
             <span>Кто сколько</span>
@@ -343,7 +344,7 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
                 setByShares((current) => !current)
               }}
             >
-              {byShares ? 'по автору записи' : 'по долям'}
+              {byShares ? 'по счёту' : 'по долям'}
             </button>
           </p>
           <div className="card card--tight">
@@ -359,7 +360,7 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
                 <button
                   type="button"
                   className="btn btn--ghost btn--slim"
-                  onClick={() => patch({ authorId: item.user_id })}
+                  onClick={() => patch({ personId: item.user_id })}
                 >
                   {formatMoney(item.amount_minor)}
                 </button>
@@ -368,8 +369,8 @@ export default function StatsPage({ currentUserId, onDrillDown, onDone }: Props)
           </div>
           <p className="hint">
             {byShares
-              ? 'Чья это трата: с общего счёта каждому засчитана его доля. Кто кому должен — на вкладке «Ещё».'
-              : 'Кто записал операцию. С общего счёта трату записывает один, а делится она пополам — переключите «по долям».'}
+              ? 'По долям: трата с общего счёта поделена пополам. Кто кому должен — на вкладке «Ещё».'
+              : 'По счёту: с чьего счёта ушли деньги. У общего счёта владельца нет, и трата числится за тем, кто её записал — переключите «по долям».'}
           </p>
         </>
       )}

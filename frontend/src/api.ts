@@ -117,7 +117,7 @@ function query(params: Record<string, QueryValue>): string {
 /** Общая часть query-строки отчёта, истории и выгрузки — один разбор на всех. */
 function filterQuery(filters: Filters): Record<string, QueryValue> {
   return {
-    author_ids: filters.authorId,
+    person_ids: filters.personId,
     category_ids: filters.categoryId,
     account_ids: filters.accountId,
     search: filters.search,

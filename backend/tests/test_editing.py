@@ -224,3 +224,76 @@ async def test_filter_by_author(auth_client: httpx.AsyncClient):
         await auth_client.get("/api/stats/summary?period=month&author_ids=не-я")
     ).json()
     assert stranger["expense_minor"] == 0
+
+
+async def test_expense_recorded_for_another_person_is_listed_under_them(
+    auth_client: httpx.AsyncClient,
+):
+    """Регрессия: фильтр по людям искал по автору записи, а не по тому, за кого она.
+
+    Аня со своего телефона записывает трату за Борю — выбирает в списке его личный счёт.
+    Автор такой записи Аня, но деньги ушли за Борю: в его истории она обязана найтись,
+    а в Аниной — нет. Раньше было наоборот, и Боря своих трат просто не видел.
+    """
+    await auth_client.post("/api/auth/login", json={"init_data": build_init_data(TOKEN, USER_B)})
+    me = (await auth_client.get("/api/me")).json()
+    users = (await auth_client.get("/api/users")).json()
+    boris = next(user for user in users if user["id"] != me["id"])
+    his = next(
+        account
+        for account in (await auth_client.get("/api/accounts")).json()
+        if account["owner_id"] == boris["id"]
+    )
+
+    await auth_client.post(
+        "/api/transactions",
+        json={"type": "expense", "amount": "700", "account_id": his["id"]},
+    )
+    # Своя трата — для контраста: она должна остаться у Ани
+    await auth_client.post("/api/transactions", json={"type": "expense", "amount": "150"})
+
+    his_history = (
+        await auth_client.get(f"/api/transactions?period=month&person_ids={boris['id']}")
+    ).json()
+    assert [item["amount_minor"] for item in his_history["items"]] == [70_000]
+    assert his_history["total"] == 1  # счётчик под списком считает по тем же условиям
+    # Записала её Аня — авторство никуда не делось, поменялось только то, чья это трата
+    assert his_history["items"][0]["author_id"] == me["id"]
+
+    my_history = (
+        await auth_client.get(f"/api/transactions?period=month&person_ids={me['id']}")
+    ).json()
+    assert [item["amount_minor"] for item in my_history["items"]] == [15_000]
+
+    # Отчёт обязан сходиться со списком, иначе «за месяц» и «история» спорят друг с другом
+    his_summary = (
+        await auth_client.get(f"/api/stats/summary?period=month&person_ids={boris['id']}")
+    ).json()
+    assert his_summary["expense_minor"] == 70_000
+    together = (await auth_client.get("/api/stats/summary?period=month")).json()
+    assert {row["user_id"]: row["amount_minor"] for row in together["by_person"]} == {
+        boris["id"]: 70_000,
+        me["id"]: 15_000,
+    }
+
+
+async def test_shared_expense_stays_with_the_one_who_recorded_it(
+    auth_client: httpx.AsyncClient,
+):
+    """У общего счёта владельца нет, и трата с него остаётся за тем, кто её записал —
+    ровно так же её считают «Взаиморасчёты»."""
+    await auth_client.post("/api/auth/login", json={"init_data": build_init_data(TOKEN, USER_B)})
+    me = (await auth_client.get("/api/me")).json()
+    shared = (
+        await auth_client.post("/api/accounts", json={"name": "Общий", "is_shared": True})
+    ).json()
+
+    await auth_client.post(
+        "/api/transactions",
+        json={"type": "expense", "amount": "1000", "account_id": shared["id"]},
+    )
+
+    mine = (
+        await auth_client.get(f"/api/transactions?period=month&person_ids={me['id']}")
+    ).json()
+    assert [item["amount_minor"] for item in mine["items"]] == [100_000]

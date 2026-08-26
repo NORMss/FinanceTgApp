@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import TransactionType
+from app.repositories import accounts as accounts_repo
 from app.repositories import transactions as tx_repo
 from app.repositories import users as users_repo
 from app.repositories.transactions import TxFilter
@@ -25,6 +26,12 @@ async def build_dump(session: AsyncSession, flt: TxFilter) -> dict:
     categories: dict[str, dict[str, int]] = matrix["categories"]
 
     users = {user.id: user.display_name for user in await users_repo.list_all(session)}
+    # Разрез по людям — «за кого потратили», а не «кто ввёл»: трату за другого пишут
+    # на его личный счёт, и в его строке она и должна оказаться
+    owners = {
+        account.id: account.owner_id
+        for account in await accounts_repo.list_all(session, include_archived=True)
+    }
     by_user_month: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     notes: dict[str, list[int]] = defaultdict(list)
     income_by_month: dict[str, int] = defaultdict(int)
@@ -40,7 +47,8 @@ async def build_dump(session: AsyncSession, flt: TxFilter) -> dict:
             key = month_key(tx.occurred_at)
             if tx.type == TransactionType.EXPENSE:
                 expense_by_month[key] += tx.amount_minor
-                by_user_month[users.get(tx.author_id, "?")][key] += tx.amount_minor
+                person_id = owners.get(tx.account_id) or tx.author_id
+                by_user_month[users.get(person_id, "?")][key] += tx.amount_minor
                 if tx.note:
                     notes[tx.note.strip().lower()].append(tx.amount_minor)
             elif tx.type == TransactionType.INCOME:

@@ -227,7 +227,10 @@ class PeriodTotalsOut(BaseModel):
     net_minor: int
 
 
-class AuthorTotalOut(BaseModel):
+class PersonTotalOut(BaseModel):
+    """Сколько потрачено за человека: по его личным счетам плюс то, что он записал
+    с общего. Не «сколько он ввёл в приложение» — трату за другого вводит кто-то один."""
+
     user_id: str
     name: str
     amount_minor: int
@@ -248,10 +251,11 @@ class SummaryOut(BaseModel):
     excluded_count: int = 0
     by_category: list[CategoryTotalOut]
     by_income_category: list[CategoryTotalOut] = Field(default_factory=list)
-    # Кто записал операцию — и кому она в итоге досталась. На общем счёте это
-    # разные вещи, поэтому обе цифры приходят сразу, без второго запроса
-    by_author: list[AuthorTotalOut]
-    by_spender: list[AuthorTotalOut] = Field(default_factory=list)
+    # Две разные цифры «кто сколько»: by_person смотрит на счёт, by_spender — на доли.
+    # На общем счёте они расходятся ровно вдвое, поэтому обе приходят сразу,
+    # без второго запроса ради переключателя
+    by_person: list[PersonTotalOut]
+    by_spender: list[PersonTotalOut] = Field(default_factory=list)
     largest: list[TxBriefOut] = Field(default_factory=list)
     repeated: list[RepeatedSpendOut] = Field(default_factory=list)
     # null — сравнивать не с чем: «Всё время» не имеет предыдущего периода

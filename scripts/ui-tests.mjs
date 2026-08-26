@@ -285,10 +285,10 @@ test('переключатель расходов и доходов меняет
   )
 })
 
-test('«по долям» отличается от «по автору записи»', async (page) => {
+test('«по долям» отличается от «по счёту»', async (page) => {
   await openTab(page, 'Отчёт')
 
-  const byAuthor = await page.$$eval('.btn--slim', (nodes) =>
+  const byAccount = await page.$$eval('.btn--slim', (nodes) =>
     nodes.map((node) => node.textContent.trim()),
   )
   await clickByText(page, '.section-title--row .btn--link', 'по долям')
@@ -297,12 +297,13 @@ test('«по долям» отличается от «по автору запи
     nodes.map((node) => node.textContent.trim()),
   )
 
-  // R11: на общем счёте трату записывает один, а делится она пополам —
-  // цифры обязаны разойтись, иначе переключатель ничего не переключает
-  assert(byAuthor.length === 2 && byShares.length === 2, 'ожидались два участника')
+  // R11: у общего счёта нет владельца, поэтому по счёту трата целиком числится
+  // за тем, кто её записал, а по долям делится пополам — цифры обязаны разойтись,
+  // иначе переключатель ничего не переключает
+  assert(byAccount.length === 2 && byShares.length === 2, 'ожидались два участника')
   assert(
-    byAuthor.join() !== byShares.join(),
-    `цифры не изменились: ${byAuthor.join(' / ')}`,
+    byAccount.join() !== byShares.join(),
+    `цифры не изменились: ${byAccount.join(' / ')}`,
   )
 })
 

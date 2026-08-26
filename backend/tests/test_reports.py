@@ -280,14 +280,15 @@ async def test_account_filter(auth_client: httpx.AsyncClient):
 # --- R11: по автору против по долям ---------------------------------------
 
 
-async def test_spender_differs_from_author_on_shared_account(
+async def test_spender_differs_from_person_on_shared_account(
     auth_client: httpx.AsyncClient, client: httpx.AsyncClient
 ):
-    """С общего счёта трату записал один, а досталась она обоим.
+    """С общего счёта трату записал один, а поделена она на обоих.
 
-    `by_author` отвечает «кто записал», `by_spender` — «чья это трата». На общем
-    счёте цифры расходятся ровно вдвое, и показывать только первую значит каждый
-    месяц объяснять, почему один «тратит» вдвое больше другого.
+    `by_person` смотрит на счёт: у общего счёта владельца нет, поэтому трата
+    относится к тому, кто её записал. `by_spender` смотрит на доли: та же трата
+    делится пополам. Обе цифры верны и отвечают на разные вопросы — показывать
+    только первую значит каждый месяц объяснять, почему один «тратит» вдвое больше.
     """
     from app.security.initdata import build_init_data
     from tests.conftest import USER_B
@@ -304,10 +305,10 @@ async def test_spender_differs_from_author_on_shared_account(
     await spend(auth_client, "400", account_id=shared["id"])
 
     data = await summary(auth_client)
-    by_author = {item["name"]: item["amount_minor"] for item in data["by_author"]}
+    by_person = {item["name"]: item["amount_minor"] for item in data["by_person"]}
     by_spender = {item["name"]: item["amount_minor"] for item in data["by_spender"]}
 
-    assert by_author == {"Аня": 40_000}
+    assert by_person == {"Аня": 40_000}
     assert by_spender == {"Аня": 20_000, "Боря": 20_000}
 
 
