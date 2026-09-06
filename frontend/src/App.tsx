@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { ApiError, login } from './api'
+import { isTransient, login, retryDelay, retryTransient } from './api'
 import AddPage from './pages/AddPage'
 import CategoriesPage from './pages/CategoriesPage'
 import HistoryPage from './pages/HistoryPage'
@@ -39,7 +39,10 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
  * и без ответа сервера, а объяснение экономит владельцу вечер.
  */
 function LoginError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const offline = error instanceof ApiError && error.status === 0
+  // Вход не состоялся, потому что до приложения не достучались: связь оборвалась или
+  // контейнер перезапускается. К белому списку и подписи это отношения не имеет,
+  // и подсказка тут ничего не выдаёт — наоборот, экономит попытку «войти заново»
+  const offline = isTransient(error)
 
   return (
     <div className="center">
@@ -83,7 +86,12 @@ export default function App() {
     queryKey: ['session'],
     queryFn: login,
     staleTime: Infinity,
-    retry: false,
+    // Вход — первое, что делает Mini App, и попасть в момент перезапуска контейнера
+    // ему проще всего: человек только что нажал кнопку в боте и ждёт. Повторяем
+    // на тех же условиях, что и остальные запросы, — отказ по существу (401) как
+    // и раньше показывается сразу
+    retry: retryTransient,
+    retryDelay,
   })
 
   /**
