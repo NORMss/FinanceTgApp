@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.routes import api_router
-from app.bot.setup import create_bot, create_dispatcher, setup_webhook, start_polling
+from app.bot.setup import bring_up, create_bot, create_dispatcher
 from app.config import settings
 from app.db import dispose_engine, get_session_factory
 from app.logging_setup import configure_logging
@@ -38,22 +38,17 @@ async def lifespan(app: FastAPI):
         await bootstrap.ensure_reference_data(session)
         await session.commit()
 
-    polling_task: asyncio.Task | None = None
+    bot_task: asyncio.Task | None = None
     if settings.bot_mode != "off" and settings.bot_token:
+        # Сами объекты создаются здесь — сети в конструкторах нет, а вебхуку нужен
+        # готовый диспетчер с первого же запроса
         app.state.bot = create_bot()
         app.state.dispatcher = create_dispatcher()
-        # Печатаем, чьим токеном представилось приложение. Подпись initData считается
-        # именно этим токеном, поэтому при 401 первым делом сверяют username здесь
-        # с ботом, из меню которого открыли Mini App.
-        try:
-            me = await app.state.bot.get_me()
-            log.info("токен принадлежит боту @%s (id=%s)", me.username, me.id)
-        except Exception as exc:  # noqa: BLE001 — Telegram может быть недоступен на старте
-            log.warning("не удалось получить данные бота: %s", exc)
-        if settings.bot_mode == "polling":
-            polling_task = await start_polling(app.state.bot, app.state.dispatcher)
-        else:
-            await setup_webhook(app.state.bot)
+        # А вот регистрация в Telegram уезжает в фон. uvicorn открывает порт только
+        # после выхода из lifespan, поэтому сетевой вызов отсюда — это время, в которое
+        # прокси отвечает 502 на каждый запрос Mini App. Ждать чужой сервис, чтобы
+        # начать отвечать на свои запросы, приложению незачем.
+        bot_task = asyncio.create_task(bring_up(app.state.bot, app.state.dispatcher))
     else:
         app.state.bot = None
         app.state.dispatcher = None
@@ -66,9 +61,9 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         stop_scheduler()
-        if polling_task is not None:
-            polling_task.cancel()
-            await asyncio.gather(polling_task, return_exceptions=True)
+        if bot_task is not None:
+            bot_task.cancel()
+            await asyncio.gather(bot_task, return_exceptions=True)
         if app.state.bot is not None:
             await app.state.bot.session.close()
         await dispose_engine()
