@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { api } from '../api'
 import CategoryPicker from '../components/CategoryPicker'
 import DayPicker from '../components/DayPicker'
 import Disclosure from '../components/Disclosure'
-import { dayKey, isoForDay } from '../day'
+import { dayKey, isoForDay, shiftDay, shortDay } from '../day'
 import { formatMoney, isValidAmount, normalizeAmountInput } from '../format'
-import { haptic, notify } from '../telegram'
+import { haptic, notify, webApp } from '../telegram'
 import type { TransactionType } from '../types'
 
 interface Props {
@@ -48,6 +48,34 @@ export default function AddPage({ currentUserId, onDone }: Props) {
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const users = useQuery({ queryKey: ['users'], queryFn: api.users })
 
+  // Выбранный день живёт между записями, но не между сутками. Telegram сворачивает
+  // Mini App, не выгружая его, и день, переживший ночь в свёрнутом окне, молча уводил бы
+  // утренние траты назад: «Сегодня» превратилось бы во «Вчера», «Вчера» — в позавчера
+  useEffect(() => {
+    let seen = dayKey()
+    const refresh = () => {
+      const now = dayKey()
+      if (document.visibilityState !== 'visible' || now === seen) return
+      seen = now
+      setDay(now)
+    }
+    document.addEventListener('visibilitychange', refresh)
+    // Сворачивание внутри самого Telegram страницу не прячет — о возврате сообщает он
+    webApp?.onEvent('activated', refresh)
+    return () => {
+      document.removeEventListener('visibilitychange', refresh)
+      webApp?.offEvent('activated', refresh)
+    }
+  }, [])
+
+  const today = dayKey()
+  // «за вчера», «за 5 окт» — пусто для сегодняшнего дня. День остаётся после записи,
+  // и забытая «Вчера» — единственная ошибка формы, которую человек не замечает: сумма
+  // и категория видны в истории сразу, а день расходится с реальностью молча. Поэтому
+  // он написан там, куда смотрят перед касанием, — на кнопке, — и повторён в подтверждении
+  const backdated =
+    day === today ? '' : ` за ${day === shiftDay(today, -1) ? 'вчера' : shortDay(day)}`
+
   const create = useMutation({
     mutationFn: () =>
       api.createTransaction({
@@ -59,20 +87,23 @@ export default function AddPage({ currentUserId, onDone }: Props) {
         tags,
         // Сегодняшний день не шлём: время проставит сервер, и в истории окажется
         // настоящий момент записи, а не полдень
-        occurred_at: day === dayKey() ? undefined : isoForDay(day),
+        occurred_at: day === today ? undefined : isoForDay(day),
       }),
     onSuccess: (tx) => {
       notify('success')
       onDone(
-        `${type === 'income' ? 'Доход' : 'Расход'} ${formatMoney(tx.amount_minor)} записан`,
+        `${type === 'income' ? 'Доход' : 'Расход'} ${formatMoney(tx.amount_minor)} записан${backdated}`,
       )
       setAmount('')
       setNote('')
-      // День возвращаем на сегодня, хотя вносить вчерашнее пачкой из-за этого дольше.
-      // Забытая «Вчера» — единственная ошибка формы, которую человек не замечает:
-      // сумма и категория видны в истории сразу, а день расходится с реальностью молча
-      setDay(dayKey())
+      // Категорию снимаем: у следующей траты она почти всегда другая, а оставшийся
+      // выбранным чипс выглядит так, будто его уже нажали, — и «Кафе» уезжает в «Продукты»
+      setCategoryId(null)
       setEntry((current) => current + 1)
+      // День не трогаем: чеки за прошлые числа вносят пачкой, и выбирать дату заново
+      // перед каждым — работа, ради которой их перестают вносить вовсе. Чтобы оставленный
+      // день не забылся, его называет сама кнопка записи (см. backdated)
+
       // Метку не сбрасываем намеренно: траты в отпуске идут подряд, и проставлять
       // «отпуск» заново для каждой — работа, ради которой метками перестают пользоваться
 
@@ -206,7 +237,7 @@ export default function AddPage({ currentUserId, onDone }: Props) {
       {create.isError && <p className="error">{(create.error as Error).message}</p>}
 
       <button className="btn" type="button" disabled={!canSubmit} onClick={() => create.mutate()}>
-        {create.isPending ? 'Сохраняем…' : 'Добавить'}
+        {create.isPending ? 'Сохраняем…' : `Добавить${backdated}`}
       </button>
     </div>
   )

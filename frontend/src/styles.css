@@ -730,6 +730,11 @@ body {
   left: 50%;
   bottom: calc(78px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
+  /* Без явной ширины блок, сдвинутый на left: 50%, ужимается до половины экрана,
+     и «Расход 1 250 записан за 5 окт» ломается на две строки */
+  width: max-content;
+  max-width: calc(100% - 32px);
+  text-align: center;
   background: var(--text);
   color: var(--bg);
   padding: 9px 16px;
