@@ -433,6 +433,26 @@ async function categoryChips(page) {
   )
 }
 
+/** Сколько чипсов категорий подсвечено — и корней, и уточнений под ними. */
+async function activeCategories(page) {
+  return page.$$eval('.picker .chip[data-active="true"]', (nodes) => nodes.length)
+}
+
+/** Ставит день в календаре «Другая»: родной выбор даты драйверу не открыть. */
+async function pickDate(page, key) {
+  await page.$eval(
+    '.segmented--soft input[type="date"]',
+    (input, value) => {
+      // Мимо сеттера React изменение не заметит: он сверяет значение со своим
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    },
+    key,
+  )
+  await wait(300)
+}
+
 /** Подпись выбранного дня в переключателе «Другая / Вчера / Сегодня». */
 async function pickedDay(page) {
   return page.$eval('.segmented--soft', (node) => {
@@ -494,9 +514,18 @@ test('запись за вчера ложится во вчерашний ден
   // задним числом выбирала бы категорию, которая никуда не переезжает
   assertEqual((await categoryChips(page))[0], target, 'категория не встала первой')
 
-  // U4: день возвращается на сегодня. Забытая «Вчера» — единственная ошибка формы,
-  // которую человек не замечает
-  assertEqual(await pickedDay(page), 'Сегодня', 'день не вернулся на сегодня')
+  // U4: день остаётся для следующей записи — чеки за прошлые числа вносят пачкой.
+  // Забытая «Вчера» — единственная ошибка формы, которую человек не замечает,
+  // поэтому оставленный день обязана называть сама кнопка
+  assertEqual(await pickedDay(page), 'Вчера', 'день сбросился после записи')
+  assertEqual(
+    await page.$eval('.page > .btn', (node) => node.textContent.trim()),
+    'Добавить за вчера',
+    'кнопка не называет оставленный день',
+  )
+
+  // U6: категория, наоборот, снимается — у следующей траты она почти всегда другая
+  assertEqual(await activeCategories(page), 0, 'категория осталась выбранной после записи')
 
   await openTab(page, 'История')
   // Первого числа вчерашний день лежит в прошлом месяце, а история открыта на этом
@@ -511,6 +540,50 @@ test('запись за вчера ложится во вчерашний ден
     return title?.nextElementSibling.textContent ?? ''
   })
   assert(yesterday.includes('345'), 'трата не попала во вчерашний день истории')
+})
+
+test('своя дата остаётся на следующие записи', async (page) => {
+  await openTab(page, 'Добавить')
+
+  // Три дня назад: заведомо не «Вчера», так что подпись на переключателе — число
+  const past = new Date()
+  past.setDate(past.getDate() - 3)
+  const key = [past.getFullYear(), past.getMonth() + 1, past.getDate()]
+    .map((part) => String(part).padStart(2, '0'))
+    .join('-')
+
+  await pickDate(page, key)
+  const label = await pickedDay(page)
+  assert(label.startsWith(`${past.getDate()} `), `переключатель показывает «${label}»`)
+
+  // U4: две записи подряд, дату выбирали один раз. Копейки — чтобы суммы не совпали
+  // с демо-данными того же дня
+  const amounts = ['347,11', '349,13']
+  for (const amount of amounts) {
+    await page.type('.amount-input', amount)
+    await clickByText(page, '.page > .btn', 'Добавить')
+    // Не по подтверждению: от первой записи оно ещё висит, когда уходит вторая
+    await page.waitForFunction(() => document.querySelector('.amount-input').value === '', {
+      timeout: 15_000,
+    })
+    await settled(page)
+    assertEqual(await pickedDay(page), label, 'дата сбросилась после записи')
+  }
+
+  await openTab(page, 'История')
+  if (past.getMonth() !== new Date().getMonth()) {
+    await clickByText(page, '.segmented button', 'Прошлый')
+    await settled(page)
+  }
+  const day = await page.evaluate((title) => {
+    const node = [...document.querySelectorAll('.section-title--row')].find((item) =>
+      item.textContent.startsWith(title),
+    )
+    return node?.nextElementSibling.textContent ?? ''
+  }, `${past.getDate()} ${monthGenitive(past)}`)
+  for (const amount of amounts) {
+    assert(day.includes(amount), `трата ${amount} не попала в выбранный день истории`)
+  }
 })
 
 test('фильтр по счёту на отчёте свёрнут в строку', async (page) => {
